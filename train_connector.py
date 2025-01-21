@@ -5,15 +5,18 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset, ConcatDataset
 import argparse
-from dataloader import RawAudio
+from data.dataloader import RawAudio
 import random
 import pandas as pd
 from transformers import Wav2Vec2Model,Wav2Vec2FeatureExtractor
-from model_RawNet2 import RawNet2
-from trainer import QFormerConnector, ConnectorClassifier
+from models.connectors.Qformer import QFormerConnector
 import torch.nn.functional as F
 from sklearn.metrics.pairwise import cosine_similarity
-
+from models.rawnet3.RawNet3 import RawNet3
+from models.rawnet3.RawNetBasicBlock import Bottle2neck
+from models.speechsplit.model import Generator_3
+from models.speechsplit.hparams import hparams
+from utils.AudioUtils import extract_mel_spectrogram, extract_pitch
 def init():
     parser = argparse.ArgumentParser(description="Train Q-Former Connector for Audio Deepfake Detection")
     # 模型參數
@@ -34,24 +37,11 @@ def init():
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use for training")
     parser.add_argument('-nb_worker', type = int, default = 8)
     
-    #DNN args
-    parser.add_argument('-m_first_conv', type = int, default = 251)
-    parser.add_argument('-m_in_channels', type = int, default = 1)
-    parser.add_argument('-m_filts', type = list, default = [128, [128,128], [128,256], [256,256]])
-    parser.add_argument('-m_blocks', type = list, default = [2, 4])
-    parser.add_argument('-m_nb_fc_att_node', type = list, default = [1])
-    parser.add_argument('-m_nb_fc_node', type = int, default = 1024)
-    parser.add_argument('-m_gru_node', type = int, default = 1024)
-    parser.add_argument('-m_nb_gru_layer', type = int, default = 1)
-    parser.add_argument('-m_nb_samp', type = int, default = 64600)
+    # 預訓練模型路徑
+    parser.add_argument("--rawnet3_path", type=str, default='./pretrained_models/rawnet3/rawnet3_weights.pt', help="Path to the RawNet3 model")
+    parser.add_argument("--speechsplit_path", type=str, default='./pretrained_models/speechsplit/speechsplit_weights.ckpt', help="Path to the SpeechSplit model")
     
-    args = parser.parse_args()
-    args.model = {}
-    for k, v in vars(args).items():
-        if k[:2] == 'm_':
-            print(k, v)
-            args.model[k[2:]] = v
-    args.model['nb_classes'] = 2        
+    args = parser.parse_args()   
     return args
 
 def contrastive_loss(emb1: torch.Tensor, emb2: torch.Tensor, temperature: float = 0.07) -> torch.Tensor:
@@ -170,79 +160,112 @@ def downsample_data(meta_path: str, dataset_name: str, target_fake_ratio: int = 
     print(f'Real samples: {len(real_indices)}, Spoof samples: {len(spoof_indices)}')
     return real_indices, spoof_indices
 
-def main(args: argparse.Namespace):
-    checkpoint_dir = os.path.join(args.model_name, "checkpoints")
-    log_file = os.path.join(args.model_name, "checkpoints", "accuracy_log.txt")
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    if os.path.exists(log_file):
-        os.remove(log_file)
 
-    training_sets = {
-        "DFADD": RawAudio(path_to_database=f'../datasets/DFADD', meta_csv='meta.csv', return_label=True, nb_samp=args.nb_samp, part='train'),
-        "CodecFake": RawAudio(path_to_database=f'../datasets/CodecFake', meta_csv='meta.csv', return_label=True, nb_samp=args.nb_samp, part='train'),
-        "ASVspoof2021_DF": RawAudio(path_to_database=f'../datasets/ASVspoof2021_DF', meta_csv='meta.csv', return_label=True, nb_samp=args.nb_samp, part='train')
+def train_phase_1(args, dataloader, encoders, connectors, optimizer, criterion, device):
+    # Set encoders to evaluation mode
+    for encoder in encoders.values():
+        encoder.eval()
+    for connector in connectors.values():
+        connector.train()  # Train connectors only
+
+    total_loss = 0.0
+    total_samples = 0
+
+    for batch in tqdm(dataloader, desc="Training Phase 1"):
+        audio, labels = batch
+        audio, labels = audio.to(device), labels.to(device)
+
+        # Store connector outputs
+        connector_outputs = []
+
+        # Process each encoder and connector
+        for modality, encoder in encoders.items():
+            if "SpeechSplit" in modality:
+                # Process SpeechSplit-specific encoders
+                mel_spectrogram = extract_mel_spectrogram(audio)
+                if modality == "SpeechSplit_timbre_content":
+                    output = encoder.encoder_2(mel_spectrogram, None)
+                elif modality == "SpeechSplit_pitch":
+                    f0_trg = extract_pitch(audio)
+                    f0_trg = torch.cat((mel_spectrogram, f0_trg), dim=1)
+                    _, output = encoder.encoder_1(f0_trg)
+                elif modality == "SpeechSplit_rhythm":
+                    output = encoder.rhythm(mel_spectrogram.transpose(1, 2))
+            else:
+                # For RawNet3 and Wav2Vec2
+                with torch.no_grad():
+                    output = encoder(audio)
+
+            # Pass through the corresponding connector
+            connector_output = connectors[modality](output)
+            connector_outputs.append(connector_output)
+
+        # Combine connector outputs and compute loss
+        connector_outputs_combined = torch.cat(connector_outputs, dim=1)
+        loss = criterion(connector_outputs_combined, labels)
+
+        # Backpropagation and optimization
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item() * len(labels)
+        total_samples += len(labels)
+
+    avg_loss = total_loss / total_samples
+    return avg_loss
+
+
+def main(args):
+    device = args.device
+    checkpoint_dir = os.path.join(args.model_name, "checkpoints")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    # Initialize datasets and dataloaders
+    train_datasets = {
+        "DFADD": RawAudio(path_to_database='../datasets/DFADD', meta_csv='meta.csv', return_label=True, nb_samp=args.nb_samp, part='train'),
+        "CodecFake": RawAudio(path_to_database='../datasets/CodecFake', meta_csv='meta.csv', return_label=True, nb_samp=args.nb_samp, part='train'),
+        "ASVspoof2021_DF": RawAudio(path_to_database='../datasets/ASVspoof2021_DF', meta_csv='meta.csv', return_label=True, nb_samp=args.nb_samp, part='train')
     }
 
-    training_set_list = []
-    for name, training_set in training_sets.items():
-        real_indices, spoof_indices = downsample_data(meta_path=f'../datasets/{name}/train/meta.csv', dataset_name=name, target_fake_ratio=2)
-        real_subset = Subset(training_set, real_indices)
-        spoof_subset = Subset(training_set, spoof_indices)
-        adjusted_set = ConcatDataset([real_subset, spoof_subset])
-        training_set_list.append(adjusted_set)
+    train_dataloader = DataLoader(ConcatDataset(train_datasets.values()), batch_size=args.batch_size, shuffle=True, num_workers=args.nb_worker)
 
-    final_training_set = ConcatDataset(training_set_list)
-    train_loader = DataLoader(final_training_set, batch_size=args.batch_size, shuffle=True, drop_last=False, num_workers=args.nb_worker)
+    # Load encoders
+    encoders = {
+        "RawNet3": RawNet3(Bottle2neck, model_scale=8, context=True, encoder_type="ECA", nOut=256).to(device),
+        "Wav2Vec2": Wav2Vec2Model.from_pretrained("facebook/wav2vec2-xls-r-300m").to(device),
+        "SpeechSplit_timbre_content": Generator_3(hparams).to(device),
+        "SpeechSplit_pitch": Generator_3(hparams).to(device),
+        "SpeechSplit_rhythm": Generator_3(hparams).to(device),
+    }
+    for encoder in encoders.values():
+        encoder.requires_grad_(False)  # Freeze all encoders
 
-    # 初始化模型
-    rawnet2 = RawNet2(args.model).to(args.device)
-    connector_rawnet = QFormerConnector(
-        input_dim=args.input_dim,
-        query_dim=args.query_dim,
-        num_queries=args.num_queries,
-        num_heads=args.num_heads,
-        num_layers=args.num_layers
-    ).to(args.device)
+    # Initialize connectors
+    connectors = {modality: QFormerConnector(input_dim=args.input_dim, query_dim=args.query_dim, num_queries=args.num_queries,
+                                             num_heads=args.num_heads, num_layers=args.num_layers).to(device)
+                  for modality in encoders.keys()}
 
-    connector_wav2vec = QFormerConnector(
-        input_dim=args.input_dim,
-        query_dim=args.query_dim,
-        num_queries=args.num_queries,
-        num_heads=args.num_heads,
-        num_layers=args.num_layers
-    ).to(args.device)
+    # Optimizer and criterion
+    optimizer = optim.Adam([p for conn in connectors.values() for p in conn.parameters()], lr=args.lr)
+    criterion = nn.CrossEntropyLoss()  # Loss function
 
-    classifier = ConnectorClassifier(input_dim=args.query_dim * 2, num_classes=2).to(args.device)
+    # Training loop
+    for epoch in range(args.epochs):
+        train_loss = train_phase_1(args, train_dataloader, encoders, connectors, optimizer, criterion, device)
+        print(f"Epoch {epoch + 1}/{args.epochs} - Loss: {train_loss:.4f}")
 
-    # 定義損失函數與優化器
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(list(rawnet2.parameters()) + list(connector_rawnet.parameters()) + list(connector_wav2vec.parameters()) + list(classifier.parameters()), lr=args.lr)
+        # Save connector checkpoints
+        for modality, connector in connectors.items():
+            torch.save(connector.state_dict(), os.path.join(checkpoint_dir, f"{modality}_connector.pth"))
 
-    # 訓練模型，儲存最佳檢查點
-    best_accuracy = 0.0
-    best_checkpoint_path = os.path.join(checkpoint_dir, "best_checkpoint.pth")
+    print("Training complete.")
 
-    for epoch in tqdm(range(args.epochs)):
-        loss, acc = train_connector_with_rawnet(
-            train_loader, rawnet2, connector_rawnet, connector_wav2vec, classifier, criterion, contrastive_loss, optimizer, args.device, checkpoint_dir
-        )
-
-        # 儲存 Accuracy 到日志
-        with open(log_file, "a") as log:
-            log.write(f"Epoch {epoch + 1}, Accuracy: {acc:.2f}%\n")
-
-        # 更新最佳檢查點
-        if acc > best_accuracy:
-            best_accuracy = acc
-            torch.save({
-                "rawnet2": rawnet2.state_dict(),
-                "connector_rawnet": connector_rawnet.state_dict(),
-                "connector_wav2vec": connector_wav2vec.state_dict(),
-                "classifier": classifier.state_dict()
-            }, best_checkpoint_path)
-
-        print(f"Epoch {epoch + 1}, Loss: {loss:.4f}, Accuracy: {acc:.2f}%, Best Accuracy: {best_accuracy:.2f}%")
 
 if __name__ == "__main__":
-    args = init()
+    args = argparse.Namespace(
+        input_dim=1024, query_dim=768, num_queries=16, num_heads=8, num_layers=4,
+        model_name="AudioExpertLLM", batch_size=32, lr=0.001, epochs=10, device="cuda" if torch.cuda.is_available() else "cpu",
+        nb_samp=64600, nb_worker=4
+    )
     main(args)

@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset, ConcatDataset
-from dataloader import RawAudio
+from data.dataloader import RawAudio
 from tqdm import tqdm
 from transformers import Wav2Vec2FeatureExtractor, Wav2Vec2Model
 from model_RawNet2 import RawNet2

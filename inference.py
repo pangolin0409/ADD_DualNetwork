@@ -1,4 +1,4 @@
-from dataloader import RawAudio
+from data.dataloader import RawAudio
 from RawNet2.model_RawNet2 import RawNet2
 from torch.utils.data import DataLoader
 import torch
@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import os
 from tqdm import tqdm
 import argparse
-import eval_metrics as em
+import utils.eval_metrics as em
 from transformers import Wav2Vec2FeatureExtractor, Wav2Vec2Model
 from train_router import QFormerConnector, SparseMoE, ConnectorClassifier
 
