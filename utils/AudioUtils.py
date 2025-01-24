@@ -2,8 +2,11 @@ import torch
 import librosa
 import numpy as np
 
-def extract_mel_spectrogram(file_path, sr=16000, n_mels=80, max_len_pad=192):
-    audio, _ = librosa.load(file_path, sr=sr)
+def extract_mel_spectrogram(audio, sr=16000, n_mels=80, max_len_pad=192):
+    if isinstance(audio, torch.Tensor):
+        # 移到 CPU，並轉 numpy
+        audio = audio.detach().cpu().numpy()
+
     mel_spectrogram = librosa.feature.melspectrogram(y=audio, sr=sr, n_mels=n_mels)
     mel_spectrogram = librosa.power_to_db(mel_spectrogram, ref=np.max)
 
@@ -13,8 +16,8 @@ def extract_mel_spectrogram(file_path, sr=16000, n_mels=80, max_len_pad=192):
     return mel_spectrogram
 
 # 如果需要提取基頻 (f0)
-def extract_pitch(file_path, sr=16000, n_fft=2048, hop_length=512, max_len_pad=192):
-    y, sr = librosa.load(file_path, sr=sr)
+def extract_pitch(audio, sr=16000, n_fft=2048, hop_length=512, max_len_pad=192):
+    y = audio.detach().cpu().numpy() if isinstance(audio, torch.Tensor) else audio
     pitch, _ = librosa.core.piptrack(y=y, sr=sr, n_fft=n_fft, hop_length=hop_length)
 
     f0 = [np.max(frame) if np.max(frame) > 0 else 0 for frame in pitch.T]

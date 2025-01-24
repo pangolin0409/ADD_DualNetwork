@@ -1,23 +1,38 @@
 import torch
 import torch.nn as nn
-# Q-Former Connector
+from transformers import Blip2QFormerModel, Blip2Config
+
 class QFormerConnector(nn.Module):
-    def __init__(self, input_dim: int, query_dim: int, num_queries: int, num_heads: int, num_layers: int):
-        super(QFormerConnector, self).__init__()
-        self.num_queries = num_queries
-        self.query_embeddings = nn.Parameter(torch.randn(num_queries, query_dim))
-
-        # 使用多頭注意力進行融合
-        self.attention = nn.MultiheadAttention(embed_dim=query_dim, num_heads=num_heads, batch_first=True)
-        self.projection = nn.Linear(input_dim, query_dim)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # 投影到 query_dim
-        x = self.projection(x)  # [batch_size, query_dim]
+    def __init__(self, input_dim, num_queries=4):
+        super().__init__()
         
-        # 將輸入擴展為與 query 嵌入匹配的形狀
-        queries = self.query_embeddings.unsqueeze(0).expand(x.size(0), -1, -1)  # [batch_size, num_queries, query_dim]
+        # 使用預設 Blip2 config（例如 "Salesforce/blip2-opt-2.7b"）
+        config = Blip2Config.from_pretrained("Salesforce/blip2-opt-2.7b")
+        self.qformer = Blip2QFormerModel(config.qformer_config)
 
-        # 使用多頭注意力進行處理
-        x, _ = self.attention(queries, x.unsqueeze(1), x.unsqueeze(1))  # Key 和 Value 來自輸入特徵
-        return x
+        # Q-Former queries = 768
+        hidden_size = config.qformer_config.hidden_size  # 通常=768
+        self.query_tokens = nn.Parameter(torch.randn(1, num_queries, hidden_size))
+
+        # 關鍵：要把 x 投影到 1408 (encoder_hidden_size) 
+        encoder_size = config.qformer_config.encoder_hidden_size  #=1408
+        self.projection = nn.Linear(input_dim, encoder_size)
+
+    def forward(self, x, attention_mask=None):
+        # x shape: [batch, seq_len, input_dim] or [batch, input_dim]
+        # 投影成 [batch, seq_len, 1408]
+        x = self.projection(x)
+
+        # 若無 mask, 則全部有效
+        if attention_mask is None:
+            attention_mask = torch.ones(x.size(0), x.size(1), dtype=torch.long, device=x.device)
+
+        # forward
+        outputs = self.qformer(
+            query_embeds=self.query_tokens.expand(x.size(0), -1, -1), 
+            encoder_hidden_states=x, 
+            encoder_attention_mask=attention_mask, 
+            return_dict=True
+        )
+        pooled_output = outputs.last_hidden_state.mean(dim=1)  # shape: [batch, 768]
+        return pooled_output
