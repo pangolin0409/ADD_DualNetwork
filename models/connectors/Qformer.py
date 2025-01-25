@@ -34,5 +34,5 @@ class QFormerConnector(nn.Module):
             encoder_attention_mask=attention_mask, 
             return_dict=True
         )
-        pooled_output = outputs.last_hidden_state.mean(dim=1)  # shape: [batch, 768]
+        pooled_output = outputs.last_hidden_state
         return pooled_output
