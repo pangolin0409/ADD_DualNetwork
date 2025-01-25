@@ -1,0 +1,31 @@
+import argparse
+import torch
+
+def init():
+    parser = argparse.ArgumentParser(description="Train Q-Former Connector for Audio Deepfake Detection")
+    # 模型參數
+    parser.add_argument("--input_dim", type=int, default=1024, help="Input feature dimension from RawNet2/Wav2Vec2")
+    parser.add_argument("--query_dim", type=int, default=768, help="Projected feature dimension")
+    parser.add_argument("--num_queries", type=int, default=4, help="Number of learnable queries")
+    parser.add_argument("--num_heads", type=int, default=4, help="Number of attention heads in Transformer")
+    parser.add_argument("--num_layers", type=int, default=4, help="Number of Transformer layers")
+
+    # 訓練參數
+    parser.add_argument('-model_name', type=str, default='DAC')
+    parser.add_argument('-nb_samp', type=int, default=64600)
+    parser.add_argument('-alpha', type=float, default=1.0)
+    parser.add_argument('-beta', type=float, default=0.0)
+    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
+    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate for optimizer")
+    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use for training")
+    parser.add_argument('-nb_worker', type=int, default=8)
+
+    # 預訓練模型路徑
+    parser.add_argument("--rawnet3_path", type=str, default='./pretrained_models/rawnet3/rawnet3_weights.pt', help="Path to the RawNet3 model")
+    parser.add_argument("--speechsplit_path", type=str, default='./pretrained_models/speechsplit/speechsplit_weights.ckpt', help="Path to the SpeechSplit model")
+    parser.add_argument("--wav2vec_path", type=str, default='./pretrained_models/wav2vec2', help="Path to the wav2vec model")
+    parser.add_argument("--llm_model_name", type=str, default="gpt2", help="LLM model name for ExpertMLP and Classifier")
+    parser.add_argument("--llm_model_dir", type=str, default="./pretrained_models/gpt2_local", help="Path to the LLM model directory")
+    args = parser.parse_args()
+    return args
