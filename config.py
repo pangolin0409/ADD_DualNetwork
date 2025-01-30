@@ -13,13 +13,16 @@ def init():
     # 訓練參數
     parser.add_argument('-model_name', type=str, default='DAC')
     parser.add_argument('-nb_samp', type=int, default=64600)
-    parser.add_argument('-alpha', type=float, default=1.0)
+    parser.add_argument('-alpha', type=float, default=.8)
     parser.add_argument('-beta', type=float, default=0.0)
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
-    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate for optimizer")
-    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+    parser.add_argument("--lr", type=float, default=0.0005, help="Learning rate for optimizer")
+    parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use for training")
     parser.add_argument('-nb_worker', type=int, default=8)
+    parser.add_argument('-is_train_connectors', action='store_true', default=False)
+    parser.add_argument('-is_train_experts', action='store_true', default=False)
+    parser.add_argument('-is_train_classifier', action='store_true', default=False)
 
     # 預訓練模型路徑
     parser.add_argument("--rawnet3_path", type=str, default='./pretrained_models/rawnet3/rawnet3_weights.pt', help="Path to the RawNet3 model")

@@ -9,14 +9,17 @@ from models.rawnet3.RawNet3 import RawNet3
 from models.rawnet3.RawNetBasicBlock import Bottle2neck
 from models.speechsplit.model import Generator_3
 from models.speechsplit.hparams import hparams
-from models.experts.ExpertMLP import ExpertMLP
-from models.connectors.Qformer import QFormerConnector
-from models.classifier.AudioClassifier import PromptedLLMClassifier
+from models.experts.ExpertMLP import ExpertMLP, Simple_Expert
+from models.connectors.Qformer import QFormerConnector, MLPConnector, ConvPoolingConnector
+from models.classifier.AudioClassifier import HiddenStateLLMClassifier, CustomTokenLLMClassifier
 from utils.Projection import Preprocessor
 from config import init
 from trainer import train_phase_1, validation_phase, downsample_data
 
 def main(args):
+    print(args.is_train_connectors)
+    print(args.is_train_experts)
+    print(args.is_train_classifier)
     device = args.device
 
     # 定義每個模態的輸入維度
@@ -29,7 +32,7 @@ def main(args):
     }
 
     # 定義目標維度（連接器的輸入維度）
-    target_query_dim = args.query_dim  # 例如 512
+    target_query_dim = args.query_dim
 
     # 初始化 datasets 和 dataloaders
     training_sets = {
@@ -91,7 +94,16 @@ def main(args):
             part='validation'
         )
     }
-    final_validation_set = ConcatDataset(list(validation_sets.values()))
+
+    validation_set_list = []
+    for name, validation_set in validation_sets.items():
+        real_indices, spoof_indices = downsample_data(meta_path=f'../datasets/{name}/validation/meta.csv', dataset_name=name, target_fake_ratio=2)
+        real_subset = Subset(validation_set, real_indices)
+        spoof_subset = Subset(validation_set, spoof_indices)
+        adjusted_set = ConcatDataset([real_subset, spoof_subset])
+        validation_set_list.append(adjusted_set)
+
+    final_validation_set = ConcatDataset(validation_set_list)
     validation_dataloader = DataLoader(final_validation_set, batch_size=args.batch_size, shuffle=True, drop_last=False, num_workers=args.nb_worker)
 
     # Load encoders
@@ -142,7 +154,6 @@ def main(args):
         encoder.requires_grad_(False)  # Freeze all encoders by default
 
     # 初始化預處理層
-    from utils.Projection import Preprocessor
     preprocessors = {
         modality: Preprocessor(modality, modality_input_dims[modality], target_query_dim)
         for modality in encoders.keys()
@@ -152,9 +163,13 @@ def main(args):
     # 初始化連接器
     connectors = {}
     for modality in encoders.keys():
-        connectors[modality] = QFormerConnector(
-            input_dim=target_query_dim
-        ).to(args.device)
+        input_dim = modality_input_dims[modality]
+        connector = MLPConnector(input_dim=input_dim, output_dim=target_query_dim).to(device)
+        # 如果不是訓練連接器，則載入預訓練連接器
+        if not args.is_train_connectors:
+            checkpoint_path = f"./{args.model_name}/pretrained_models/connectors/best_{modality}_connector.pth"
+            connector.load_state_dict(torch.load(checkpoint_path))
+        connectors[modality] = connector
 
     # 初始化專家
     experts = {
@@ -165,11 +180,18 @@ def main(args):
         for modality in encoders.keys()
     }
 
+    # experts = {
+    #     modality: Simple_Expert(
+    #         hidden_dim=512,
+    #         output_dim=768
+    #     ).to(device)
+    #     for modality in encoders.keys()
+    # }
+
     # 初始化單一分類器
-    classifier = PromptedLLMClassifier(
+    classifier = HiddenStateLLMClassifier(
         llm_name=args.llm_model_name,
-        model_dir=args.llm_model_dir,
-        prompt  = 'You are an audio deepfake detector. You are given an audio embedding to determine if it is real or fake.',
+        model_dir=args.llm_model_dir
     ).to(device)
 
     # 僅訓練連接器
@@ -177,6 +199,8 @@ def main(args):
         [param for connector in connectors.values() for param in connector.parameters()],
         lr=args.lr
     )
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.5)
+
     criterion = nn.CrossEntropyLoss()
 
     # 準備儲存目錄
@@ -197,7 +221,10 @@ def main(args):
             optimizer,
             criterion,
             device,
-            alpha_align=1.0  # 調大或調小，用來控制對齊損失的重要性
+            alpha_align=args.alpha,
+            is_train_connector=args.is_train_connectors,
+            is_train_experts=args.is_train_experts,
+            is_train_classifier=args.is_train_classifier
         )
         print(f"Epoch {epoch + 1}/{args.epochs} - Loss: {train_loss:.4f}")
 
@@ -219,22 +246,32 @@ def main(args):
         with open("training_log.csv", "a") as f:
             f.write(f"{epoch},{train_loss:.4f},{val_loss:.4f}, {val_eer:.4f}\n")
 
-        
+        # 更新學習率
+        scheduler.step()
+        print(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.6f}")
+
         # 保存檢查點
-        for modality, connector in connectors.items():
-            torch.save(
-                connector.state_dict(),
-                os.path.join(checkpoint_dir, f"{modality}_connector_epoch_{epoch}.pth")
-            )
+        # for modality, connector in connectors.items():
+        #     torch.save(
+        #         connector.state_dict(),
+        #         os.path.join(checkpoint_dir, f"{modality}_connector_epoch_{epoch}.pth")
+        #     )
 
         # 檢查是否是最佳 EER
         if val_eer < best_eer:
             best_eer = val_eer
-            for modality, connector in connectors.items():
-                torch.save(
-                    connector.state_dict(),
-                    os.path.join(checkpoint_dir, f"best_{modality}_connector_epoch_{epoch}.pth")
-                )
+            if args.is_train_connectors:
+                for modality, connector in connectors.items():
+                    torch.save(
+                        connector.state_dict(),
+                        os.path.join(checkpoint_dir, f"best_{modality}_connector.pth")
+                    )
+            if args.is_train_experts:
+                for modality, expert in experts.items():
+                    torch.save(
+                        expert.state_dict(),
+                        os.path.join(checkpoint_dir, f"best_{modality}_expert.pth")
+                    )
 
     print("Training complete.")
 

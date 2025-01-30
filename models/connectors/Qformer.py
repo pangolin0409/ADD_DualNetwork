@@ -36,3 +36,46 @@ class QFormerConnector(nn.Module):
         )
         pooled_output = outputs.last_hidden_state
         return pooled_output
+
+class MLPConnector(nn.Module):
+    def __init__(self, input_dim, output_dim=768):
+        super(MLPConnector, self).__init__()
+        self.proj = nn.Sequential(
+            nn.Linear(input_dim, output_dim),
+            nn.ReLU(),
+            nn.Linear(output_dim, output_dim)
+        )
+    
+    def forward(self, x):
+        if x.dim() == 3:
+            # [batch_size, seq_len, input_dim]
+            # 如果需要投影
+            if self.proj is not None:
+                x = self.proj(x)  # -> [batch_size, seq_len, target_dim]
+            # 不做 pool，保留序列給 Q-Former
+            return x
+
+        elif x.dim() == 2:
+            # [batch_size, input_dim] (比如 rawnet3 輸出單向量)
+            # 如果要讓 Q-Former 處理，也得讓它有 seq_len 維度 (seq_len=1)
+            x = x.unsqueeze(1)  # -> [batch_size, 1, input_dim]
+            if self.proj is not None:
+                x = self.proj(x)  # -> [batch_size, 1, target_dim]
+            return x
+
+        return x
+
+
+class ConvPoolingConnector(nn.Module):
+    def __init__(self, input_dim, output_dim=768, kernel_size=3, pooling_size=2):
+        super(ConvPoolingConnector, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv1d(input_dim, output_dim, kernel_size, padding=kernel_size//2),
+            nn.ReLU(),
+            nn.MaxPool1d(pooling_size),
+            nn.Conv1d(output_dim, output_dim, kernel_size, padding=kernel_size//2),
+            nn.ReLU()
+        )
+        
+    def forward(self, x):
+        return self.conv(x.transpose(1, 2)).transpose(1, 2)

@@ -52,3 +52,27 @@ class ExpertMLP(nn.Module):
         # 最後投影
         out = self.output_projection(weighted_output)  # [b, s, h]
         return out
+
+
+class Simple_Expert(nn.Module):
+    """ 定義單一專家（Expert）模組 """
+    def __init__(self, hidden_dim, output_dim):
+        super(Simple_Expert, self).__init__()
+        self.fc1 = nn.Linear(hidden_dim, hidden_dim)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(hidden_dim, output_dim)
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+    def forward(self, x):
+        """
+        x: [batch_size, seq_len, input_dim]
+        output: [batch_size, seq_len, output_dim]
+        """
+
+        batch_size, seq_len, input_dim = x.shape
+        self.projection = nn.Linear(input_dim, self.hidden_dim).to(x.device)
+        x = self.projection(x)
+        x = self.fc1(x)  # [batch, seq, hidden_dim]
+        x = self.relu(x)
+        x = self.fc2(x)  # [batch, seq, output_dim]
+        return x
