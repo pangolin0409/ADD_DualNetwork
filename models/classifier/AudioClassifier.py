@@ -180,3 +180,17 @@ class GPT2RegressionHead(nn.Module):
         regression_logit = output.scores[0][0, prob_id]  # 假設 batch_size=1
         prob = torch.sigmoid(regression_logit)
         return prob
+    
+class SimpleMLPClassifier(nn.Module):
+    def __init__(self, input_dim, hidden_dim, num_classes=2):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, num_classes)
+        )
+
+    def forward(self, x):
+        # x shape: (B, input_dim)
+        logits = self.mlp(x)  # (B, 2)
+        return logits

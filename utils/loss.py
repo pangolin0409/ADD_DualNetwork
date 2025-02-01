@@ -1,6 +1,39 @@
 import torch
 import torch.nn.functional as F
 
+"""
+    多模態對比學習：
+    embeddings_dict: { 
+        "modality1": Tensor(shape [batch, dim]),
+        "modality2": Tensor(shape [batch, dim]),
+        ...
+    }
+    做兩兩 InfoNCE 後平均
+"""
+def multi_modal_alignment_loss(embeddings_dict, temperature=0.07):
+    modalities = list(embeddings_dict.keys())
+    total_loss = 0.0
+    count = 0
+
+    for i in range(len(modalities)):
+        for j in range(i + 1, len(modalities)):
+            emb_i = embeddings_dict[modalities[i]]  # shape: [batch, seq_len, dim]
+            emb_j = embeddings_dict[modalities[j]]  # shape: [batch, seq_len, dim]
+
+            # 例如用 mean pooling => [batch, dim]
+            emb_i_2d = emb_i.mean(dim=1)
+            emb_j_2d = emb_j.mean(dim=1)
+
+            # 單對 InfoNCE
+            pair_loss = info_nce_loss(emb_i_2d, emb_j_2d, temperature)
+            total_loss += pair_loss
+            count += 1
+
+    if count > 0:
+        total_loss /= count
+    return total_loss
+
+
 def info_nce_loss(emb_a, emb_b, temperature=0.07):
     """
     對兩個模態做 InfoNCE。
@@ -33,3 +66,54 @@ def info_nce_loss(emb_a, emb_b, temperature=0.07):
 
     loss = (loss_a2b + loss_b2a) / 2
     return loss
+
+"""
+    計算對比式學習 Loss
+
+    Args:
+        features_q (torch.Tensor): 模型萃取人聲表徵
+        features_k (torch.Tensor): 模型萃取人聲表徵
+        negatives (torch.Tensor): 負向樣本
+        temperature (float): temperature
+    Returns:
+        torch.Tensor: Length loss.
+"""
+def contrastive_loss(features_q: torch.Tensor, features_k: torch.Tensor, negatives: torch.Tensor, temperature: float) -> torch.Tensor:
+    features_q = features_q / features_q.norm(dim=1, keepdim=True)
+    features_k = features_k / features_k.norm(dim=1, keepdim=True)
+    negatives = negatives / negatives.norm(dim=1, keepdim=True)
+
+    real_utterance_similarity = torch.exp(torch.sum(features_q * features_k, dim=-1) / temperature)
+    fake_utterance_similarity = torch.exp(torch.matmul(features_q, negatives.T) / temperature)
+
+    # 避免數值不穩定
+    epsilon = 1e-8  # 平滑項
+    real_utterance_similarity = torch.clamp(real_utterance_similarity, min=epsilon)
+    fake_utterance_similarity_sum = torch.clamp(fake_utterance_similarity.sum(dim=-1), min=epsilon)
+
+    loss = -torch.log(real_utterance_similarity / (real_utterance_similarity + fake_utterance_similarity_sum))
+    return loss.mean()
+
+"""
+    計算真假人聲長度 Loss
+
+    Args:
+        features (torch.Tensor): 模型萃取人聲表徵
+        labels (torch.Tensor): 真假人聲標籤
+        margin (float): Margin for the loss calculation.
+
+    Returns:
+        torch.Tensor: Length loss.
+"""
+def length_loss(features: torch.Tensor, labels: torch.Tensor, margin: float, weight: float = 1.0) -> torch.Tensor:
+    # 假音頻標籤為 1
+    fake_features = features[labels == 1]  # 假音頻（合成人聲）
+    # 真音頻標籤為 0
+    real_features = features[labels == 0]  # 真音頻
+
+    # 真實音頻損失：讓 norm 趨近於 0
+    real_loss = weight * torch.norm(real_features, p=2, dim=1).mean()
+    # 假音頻損失：讓 norm 超過 margin
+    fake_loss = torch.relu(margin - torch.norm(fake_features, p=2, dim=1)).mean()
+    
+    return real_loss + fake_loss

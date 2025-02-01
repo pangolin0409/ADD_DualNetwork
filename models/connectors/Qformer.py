@@ -38,12 +38,13 @@ class QFormerConnector(nn.Module):
         return pooled_output
 
 class MLPConnector(nn.Module):
-    def __init__(self, input_dim, output_dim=768):
+    def __init__(self, input_dim, output_dim):
         super(MLPConnector, self).__init__()
         self.proj = nn.Sequential(
             nn.Linear(input_dim, output_dim),
             nn.ReLU(),
-            nn.Linear(output_dim, output_dim)
+            nn.Linear(output_dim, output_dim),
+            nn.ReLU()
         )
     
     def forward(self, x):
@@ -78,4 +79,12 @@ class ConvPoolingConnector(nn.Module):
         )
         
     def forward(self, x):
+        if x.dim() == 3:
+            # [batch_size, seq_len, input_dim]
+            # 如果需要投影
+            x = self.proj(x)  # -> [batch_size, seq_len, target_dim]
+        elif x.dim() == 2:
+            # [batch_size, input_dim] (比如 rawnet3 輸出單向量)
+            # 如果要讓 Q-Former 處理，也得讓它有 seq_len 維度 (seq_len=1)
+            x = x.unsqueeze(1)  # -> [batch_size, 1, input_dim]
         return self.conv(x.transpose(1, 2)).transpose(1, 2)

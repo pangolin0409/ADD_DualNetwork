@@ -3,25 +3,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 import torch
-from utils.AudioUtils import extract_mel_spectrogram, extract_pitch
-from trainer import get_modality_embedding, downsample_data
+from trainer import get_modality_embedding, downsample_data, get_components
 from torch.utils.data import DataLoader, ConcatDataset, Subset
 from data.dataloader import RawAudio
-from models.rawnet3.RawNet3 import RawNet3
-from models.speechsplit.model import Generator_3
-from models.speechsplit.hparams import hparams
-from transformers import Wav2Vec2Model, Wav2Vec2FeatureExtractor
 from config import init
-from models.connectors.Qformer import QFormerConnector
-from utils.Projection import Preprocessor
-from models.classifier.AudioClassifier import HiddenStateLLMClassifier
-from models.experts.ExpertMLP import ExpertMLP
-from models.rawnet3.RawNetBasicBlock import Bottle2neck
 import torch.nn.functional as F
 import os
 
 def extract_connector_features_and_labels(
-    dataloader, encoders, preprocessors, connectors, device, wav2vec_extractor
+    dataloader, encoders, connectors, device, wav2vec_extractor
 ):
     """
     通过 t-SNE 可视化 Connector 的输出。
@@ -37,8 +27,7 @@ def extract_connector_features_and_labels(
                 # Encoder 的处理逻辑
                 output = get_modality_embedding(modality=modality, encoders=encoders, audio=audio, wav2vec_extractor=wav2vec_extractor, device=device)
                 # Preprocessor 和 Connector
-                preprocessed_output = preprocessors[modality](output)
-                connector_output = connectors[modality](preprocessed_output)
+                connector_output = connectors[modality](output)
 
                 # 使用平均池化将特征从三维降到二维
                 pooled_output = F.adaptive_avg_pool1d(connector_output.permute(0, 2, 1), output_size=1).squeeze(2)
@@ -150,75 +139,13 @@ if __name__=='__main__':
     final_training_set = ConcatDataset(training_set_list)
     train_dataloader = DataLoader(final_training_set, batch_size=args.batch_size, shuffle=True, drop_last=False, num_workers=args.nb_worker)
 
-    # Load encoders
-    encoders = {
-        "RawNet3": RawNet3(
-            Bottle2neck,
-            model_scale=8,
-            context=True,
-            summed=True,
-            encoder_type="ECA",
-            nOut=256,
-            out_bn=False,
-            sinc_stride=10,
-            log_sinc=True,
-            norm_sinc="mean",
-            grad_mult=1.0,
-        ).to(device),
-        "Wav2Vec2": Wav2Vec2Model.from_pretrained(
-            "facebook/wav2vec2-xls-r-300m",
-            cache_dir=args.wav2vec_path
-        ).to(device),
-        "SpeechSplit_timbre_content": Generator_3(hparams).to(device),
-        "SpeechSplit_pitch": Generator_3(hparams).to(device),
-        "SpeechSplit_rhythm": Generator_3(hparams).to(device),
-    }
-
-    # Load feature extractor
-    wav2vec_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
-        "facebook/wav2vec2-xls-r-300m", cache_dir=args.wav2vec_path
-    )
-    
-    # Load RawNet3 weights
-    encoders['RawNet3'].load_state_dict(
-        torch.load(
-            args.rawnet3_path,
-            map_location=device,
-            weights_only=True
-        )["model"]
-    )
-
-    # Load SpeechSplit weights
-    checkpoint = torch.load(args.speechsplit_path, map_location=device, weights_only=True)
-    encoders['SpeechSplit_timbre_content'].load_state_dict(checkpoint['model'])
-    encoders['SpeechSplit_pitch'].load_state_dict(checkpoint['model'])
-    encoders['SpeechSplit_rhythm'].load_state_dict(checkpoint['model'])
-
-
-     # 初始化預處理層
-    preprocessors = {
-        modality: Preprocessor(modality, modality_input_dims[modality], target_query_dim)
-        for modality in encoders.keys()
-    }
-    preprocessors = {k: v.to(device) for k, v in preprocessors.items()}
-
-    # 初始化連接器
-    connectors = {}
-    for modality in encoders.keys():
-        connector = QFormerConnector(input_dim=target_query_dim).to(args.device)
-        checkpoint_path = f"./DAC/pretrained_models/connectors/best_{modality}_connector.pth"
-        try:
-            connector.load_state_dict(torch.load(checkpoint_path))
-        except FileNotFoundError:
-            print(f"Connector checkpoint for {modality} not found at {checkpoint_path}")
-        connectors[modality] = connector
+    encoders, wav2vec_extractor, connectors, experts, classifier = get_components(args=args, modality_input_dims=modality_input_dims)
 
 
     # 提取 Connector 特征
     modality_features = extract_connector_features_and_labels(
         dataloader=train_dataloader,
         encoders=encoders,
-        preprocessors=preprocessors,
         connectors=connectors,
         device=device,
         wav2vec_extractor=wav2vec_extractor

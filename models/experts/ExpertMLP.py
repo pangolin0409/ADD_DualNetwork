@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from transformers import AutoConfig, AutoModel
-
+from torch.nn import functional as F
 class ExpertMLP(nn.Module):
     def __init__(self, model_name="gpt2", model_dir="./pretrained_models/gpt2_local"):
         super().__init__()
@@ -54,25 +54,84 @@ class ExpertMLP(nn.Module):
         return out
 
 
-class Simple_Expert(nn.Module):
-    """ 定義單一專家（Expert）模組 """
-    def __init__(self, hidden_dim, output_dim):
-        super(Simple_Expert, self).__init__()
-        self.fc1 = nn.Linear(hidden_dim, hidden_dim)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_dim, output_dim)
-        self.hidden_dim = hidden_dim
+class TDNNLayer(nn.Module):
+    """
+    基本 TDNN (Time Delay Neural Network) block
+    dilation表示擴張卷積, kernel_size=3 or 5可再調整
+    """
+    def __init__(self, input_dim, output_dim, device, kernel_size=3, dilation=1):
+        super().__init__()
+        self.tdnn = nn.Conv1d(
+            in_channels=input_dim,
+            out_channels=output_dim,
+            kernel_size=kernel_size,
+            dilation=dilation,
+        ).to(device)
+        self.kernel_size = kernel_size
+        self.dilation = dilation
+        self.input_dim = input_dim
         self.output_dim = output_dim
+        self.bn = nn.BatchNorm1d(output_dim)
+        self.device = device
     def forward(self, x):
-        """
-        x: [batch_size, seq_len, input_dim]
-        output: [batch_size, seq_len, output_dim]
-        """
+        # x shape: (B, T, F)
+        # 動態調整 kernel_size，確保不超過 T
+        kernel_size = min(self.kernel_size, x.size(1))
+        
+        # 重新初始化 Conv1d，確保 kernel_size 不超過 T
+        if self.tdnn is None or self.tdnn.kernel_size[0] != kernel_size:
+            self.tdnn = nn.Conv1d(
+                in_channels=self.input_dim,
+                out_channels=self.output_dim,
+                kernel_size=kernel_size,
+                dilation=self.dilation,
+            ).to(self.device)
 
-        batch_size, seq_len, input_dim = x.shape
-        self.projection = nn.Linear(input_dim, self.hidden_dim).to(x.device)
-        x = self.projection(x)
-        x = self.fc1(x)  # [batch, seq, hidden_dim]
-        x = self.relu(x)
-        x = self.fc2(x)  # [batch, seq, output_dim]
+        # 需要先轉成 (B, F, T) 才能丟進 Conv1d
+        x = x.transpose(1, 2)   # -> (B, F, T)
+        x = self.tdnn(x)        # -> (B, output_dim, T')
+        x = self.bn(x)
+        x = F.relu(x)
+        x = x.transpose(1, 2)   # -> (B, T', output_dim)
         return x
+
+class AttentionPooling(nn.Module):
+    """
+    單頭注意力加權，將 (B, T, D) 序列壓縮為 (B, D)
+    """
+    def __init__(self, input_dim):
+        super().__init__()
+        self.attention = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.Tanh(),
+            nn.Linear(128, 1)
+        )
+
+    def forward(self, x):
+        # x shape: (B, T, D)
+        # 計算注意力權重 alpha
+        alpha = self.attention(x)          # (B, T, 1)
+        alpha = F.softmax(alpha, dim=1)    # (B, T, 1)
+
+        # 加權求和
+        x = x * alpha                      # (B, T, D)
+        x = x.sum(dim=1)                   # (B, D)
+        return x
+
+class ExpertTDNN(nn.Module):
+    """
+    專家: TDNN 多層 + Attention Pooling
+    """
+    def __init__(self, input_dim, hidden_dim, device):
+        super().__init__()
+        # 這裡示範2層TDNN，可自行增減
+        self.tdnn1 = TDNNLayer(input_dim, hidden_dim, kernel_size=3, dilation=1, device=device).to(device)
+        self.tdnn2 = TDNNLayer(hidden_dim, hidden_dim, kernel_size=3, dilation=2, device=device).to(device)
+        self.attention = AttentionPooling(hidden_dim).to(device)
+
+    def forward(self, x):
+        # x shape: (B, T, input_dim)
+        x = self.tdnn1(x)      # -> (B, T', hidden_dim)
+        x = self.tdnn2(x)      # -> (B, T'', hidden_dim)
+        x = self.attention(x)  # -> (B, hidden_dim)
+        return x  # 取pooling後的向量做後續分類

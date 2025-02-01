@@ -6,175 +6,298 @@ import pandas as pd
 import utils.eval_metrics as em
 import torch.nn.functional as F
 import numpy as np
-from utils.loss import info_nce_loss
+from utils.loss import multi_modal_alignment_loss, length_loss, contrastive_loss
+from transformers import Wav2Vec2Model, Wav2Vec2FeatureExtractor
+from models.rawnet3.RawNet3 import RawNet3
+from models.rawnet3.RawNetBasicBlock import Bottle2neck
+from models.speechsplit.model import Generator_3
+from models.speechsplit.hparams import hparams
+from models.experts.ExpertMLP import ExpertTDNN
+from models.connectors.Qformer import MLPConnector
+from models.classifier.AudioClassifier import SimpleMLPClassifier
 
-"""
-    多模態對比學習：
-    embeddings_dict: { 
-        "modality1": Tensor(shape [batch, dim]),
-        "modality2": Tensor(shape [batch, dim]),
-        ...
+
+def get_components(args, modality_input_dims):
+    device = args.device
+
+    # -------------------
+    # 1) Load encoders
+    # -------------------
+    encoders = {
+        "RawNet3": RawNet3(
+            Bottle2neck,
+            model_scale=8,
+            context=True,
+            summed=True,
+            encoder_type="ECA",
+            nOut=256,
+            out_bn=False,
+            sinc_stride=10,
+            log_sinc=True,
+            norm_sinc="mean",
+            grad_mult=1.0,
+        ).to(device),
+        "Wav2Vec2": Wav2Vec2Model.from_pretrained(args.wav2vec_path).to(device),
+        "SpeechSplit_timbre_content": Generator_3(hparams).to(device),
+        "SpeechSplit_pitch": Generator_3(hparams).to(device),
+        "SpeechSplit_rhythm": Generator_3(hparams).to(device),
     }
-    做兩兩 InfoNCE 後平均
-"""
-def multi_modal_alignment_loss(embeddings_dict, temperature=0.07):
-    modalities = list(embeddings_dict.keys())
-    total_loss = 0.0
-    count = 0
 
-    for i in range(len(modalities)):
-        for j in range(i + 1, len(modalities)):
-            emb_i = embeddings_dict[modalities[i]]  # shape: [batch, seq_len, dim]
-            emb_j = embeddings_dict[modalities[j]]  # shape: [batch, seq_len, dim]
+    # Load Wav2Vec2 feature extractor
+    wav2vec_extractor = Wav2Vec2FeatureExtractor.from_pretrained(args.wav2vec_path)
 
-            # 例如用 mean pooling => [batch, dim]
-            emb_i_2d = emb_i.mean(dim=1)
-            emb_j_2d = emb_j.mean(dim=1)
+    # Load RawNet3 weights
+    encoders['RawNet3'].load_state_dict(
+        torch.load(args.rawnet3_path, map_location=device, weights_only=True)["model"]
+    )
 
-            # 單對 InfoNCE
-            pair_loss = info_nce_loss(emb_i_2d, emb_j_2d, temperature)
-            total_loss += pair_loss
-            count += 1
+    # Load SpeechSplit weights
+    checkpoint = torch.load(args.speechsplit_path, map_location=device, weights_only=True)
+    encoders['SpeechSplit_timbre_content'].load_state_dict(checkpoint['model'])
+    encoders['SpeechSplit_pitch'].load_state_dict(checkpoint['model'])
+    encoders['SpeechSplit_rhythm'].load_state_dict(checkpoint['model'])
 
-    if count > 0:
-        total_loss /= count
-    return total_loss
+    for encoder in encoders.values():
+        encoder.requires_grad_(False)  # Freeze all encoders by default
+
+    # -------------------
+    # 2) 初始化 connectors
+    # -------------------
+    connectors = {}
+    for modality in encoders.keys():
+        input_dim = modality_input_dims[modality]
+        connector = MLPConnector(
+            input_dim=input_dim, 
+            output_dim=args.query_dim
+        ).to(device)
+
+        if not args.is_train_connectors:
+            # 載入預訓練好的 connector
+            checkpoint_path = f"./{args.model_name}/pretrained_models/connectors/best_{modality}_connector.pth"
+            connector.load_state_dict(torch.load(checkpoint_path, map_location=device, weights_only=True))
+        
+        connectors[modality] = connector
+
+    # -------------------
+    # 3) 初始化專家 (TDNN+Attention)
+    # -------------------
+    experts = {}
+    for modality in encoders.keys():
+        # 假設 ExpertTDNN(input_dim=args.query_dim, tdnn_hidden_dim=args.tdnn_hidden_dim)
+        experts[modality] = ExpertTDNN(
+            input_dim=args.query_dim, 
+            hidden_dim=args.tdnn_hidden_dim,
+            device=device
+        ).to(device)
+
+    # -------------------
+    # 4) 初始化單一 MLP 分類器
+    # -------------------
+    # 假設輸入維度 = tdnn_hidden_dim, hidden_dim=128, output_dim=2
+    classifier = SimpleMLPClassifier(
+        input_dim=args.tdnn_hidden_dim,
+        hidden_dim=128,
+        num_classes=2
+    ).to(device)
+
+    return encoders, wav2vec_extractor, connectors, experts, classifier
 
 
-def train_phase_1(
+def train(
     train_dataloader,
     encoders,
     wav2vec_extractor,
-    preprocessors,
     connectors,
     experts,
     classifier,
+    negative_queue,  # 可以是 None 或 NegativeQueue 實例
     optimizer,
-    criterion,
+    criterion,         # CrossEntropyLoss 或其他
     device,
-    alpha_align,
+    # 是否訓練各模組
     is_train_connector=False,
-    is_train_experts=False,
-    is_train_classifier=False
+    is_train_expert=False,
+    is_train_classifier=False,
+    # Loss 權重
+    alpha_align=0.0,     # 多模態對齊(InfoNCE)的權重 (第一階段用)
+    alpha_contrast=0.0,  # 對比損失權重
+    alpha_length=0.0,    # length_loss 權重
+    margin=4.0,          # length_loss 用
+    temperature=0.07     # contrastive_loss 溫度
 ):
     """
-    只更新 Connector 的權重，其餘 (Encoder, Preprocessor, Expert, Classifier) 都凍結。
-    並在同一個 batch 內，同時計算各模態的分類損失和多模態對齊 (MSE) 損失。
-    alpha_align 用於調整對齊損失的權重。
+    單一函式，同時可支援第一階段/第二階段的訓練邏輯：
+    - 若 is_train_connector=True => 訓練 Connector (類似第一階段)
+      同時可搭配 alpha_align > 0 做多模態對齊
+    - 若 is_train_expert=True, is_train_classifier=True => 訓練 Expert+Classifier (第二階段)
+      可同時在每個模態上計算 length_loss, contrastive_loss
     """
 
-    # -----------------------------
-    # 1) 凍結 Encoder & Preprocessor & Expert & Classifier
-    # -----------------------------
+    # 1) 設定 Encoders, Connectors, Experts, Classifier 之 requires_grad
+    # ----------------------------------------------------------------
+    # Encoders 一般都凍結
     for encoder in encoders.values():
         encoder.eval()
-        for param in encoder.parameters():
-            param.requires_grad = False
+        for p in encoder.parameters():
+            p.requires_grad = False
 
-    for preprocessor in preprocessors.values():
-        preprocessor.eval()
-        for param in preprocessor.parameters():
-            param.requires_grad = False
+    # Connector
+    for connector in connectors.values():
+        if is_train_connector:
+            connector.train()
+            for p in connector.parameters():
+                p.requires_grad = True
+        else:
+            connector.eval()
+            for p in connector.parameters():
+                p.requires_grad = False
 
-    if is_train_experts:
-        for expert in experts.values():
+    # Experts
+    for expert in experts.values():
+        if is_train_expert:
             expert.train()
-            for param in expert.parameters():
-                param.requires_grad = True
-    else:
-        for expert in experts.values():
+            for p in expert.parameters():
+                p.requires_grad = True
+        else:
             expert.eval()
-            for param in expert.parameters():
-                param.requires_grad = False
+            for p in expert.parameters():
+                p.requires_grad = False
 
+    # Classifier
     if is_train_classifier:
         classifier.train()
-        for param in classifier.parameters():
-            param.requires_grad = True
+        for p in classifier.parameters():
+            p.requires_grad = True
     else:
         classifier.eval()
-        for param in classifier.parameters():
-            param.requires_grad = False
+        for p in classifier.parameters():
+            p.requires_grad = False
 
-    # -----------------------------
-    # 2) 設定 Connector 可否訓練
-    # -----------------------------
-    if is_train_connector:
-        for connector in connectors.values():
-            connector.train()
-            for param in connector.parameters():
-                param.requires_grad = True
-    else:
-        for connector in connectors.values():
-            connector.eval()
-            for param in connector.parameters():
-                param.requires_grad = False
-
+    # 2) 訓練循環
     total_loss_epoch = 0.0
     total_samples_epoch = 0
-    modality_losses = {modality: 0.0 for modality in encoders.keys()}
 
-    # -----------------------------
-    # 3) 開始訓練迴圈
-    # -----------------------------
-    for batch in tqdm(train_dataloader, desc="第一階段訓練"):
+    for batch in tqdm(train_dataloader, desc="Train Epoch"):
         audio, labels = batch
         audio, labels = audio.to(device), labels.to(device)
 
-        # 用來累積各模態的分類損失，與 Connector 輸出（以便後面計算對齊損失）
-        classification_losses = []
-        connector_outputs = {}
+        # 保存每個模態的:
+        # (a) classifier CE loss
+        # (b) length loss
+        # (c) contrastive loss
+        ce_losses = []
+        length_losses = []
+        contrastive_losses = []
+
+        # 為多模態對齊 (connector align) 做準備:
+        # 收集 {modality: connector_output} 用於 multi_modal_alignment_loss
+        connector_outputs_dict = {}
 
         # -----------------------------
-        # (A) 收集所有模態的輸出、分類損失
+        # A) 逐模態 forward + 計算 loss
         # -----------------------------
         for modality in encoders.keys():
+            # 1) Encoder (凍結) + wav2vec_extractor (凍結)
             with torch.no_grad():
-                # 凍結的 Encoder & Preprocessor
-                preprocessed_output = get_modality_embedding(modality, audio, encoders, wav2vec_extractor, device)
-                # preprocessed_output = preprocessors[modality](output)
+                preprocessed_output = get_modality_embedding(
+                    modality, audio, encoders, wav2vec_extractor, device
+                )
 
-            # Connector (可訓練)
+            # 2) Connector (看 is_train_connector)
             connector_output = connectors[modality](preprocessed_output)
-            connector_outputs[modality] = connector_output  # 留待計算對齊損失
+            # 收集到 dict (若要做 multi_modal_alignment_loss)
+            connector_outputs_dict[modality] = connector_output
 
-            # 不用 torch.no_grad，但仍然凍結 Expert 和 Classifier
-            expert_output = experts[modality](connector_output)
-            task_prompt = None
-            classifier_output = classifier(embeddings=expert_output, task_prompt=task_prompt)
-            # 計算該模態的CE分類損失
-            loss_ce = criterion(classifier_output, labels)
-            classification_losses.append(loss_ce)
+            # 3) Expert (TDNN+Attention) - 可能訓練
+            expert_out = experts[modality](connector_output)  # shape (B, feat_dim)
 
-            # 累加該模態的 (CE x batch_size) 到 modality_losses，用於後面 epoch-end 的統計
-            modality_losses[modality] += loss_ce.item() * len(labels)
+            # 4) Classifier (可能訓練)
+            logits = classifier(expert_out)  # shape (B, 2)
+            loss_ce = criterion(logits, labels)
+            ce_losses.append(loss_ce)
+
+            # 5) length_loss & contrastive_loss (by 模態)
+            # ------------------------------------------------------------
+            #   length_loss: 針對本模態 expert_out
+            #   contrastive_loss: 
+            #       需要 negatives 來自 negative_queue 或其他
+            # ------------------------------------------------------------
+            if alpha_length > 0.0:
+                l_len = length_loss(expert_out, labels, margin=margin)
+                length_losses.append(l_len)
+            else:
+                l_len = torch.zeros(1, device=device)
+
+            if alpha_contrast > 0.0 and negative_queue is not None:
+                # negatives from queue
+                negatives = negative_queue.get_negatives()
+
+                # 這裡示範 simplest: features_q = features_k = expert_out
+                # 你也可以依照真正對比設計(q, k 不同 sample / real vs fake pairing)
+                # by 模態 -> enqueue "fake" from this modality
+                l_con = contrastive_loss(
+                    features_q=expert_out, 
+                    features_k=expert_out, 
+                    negatives=negatives, 
+                    temperature=temperature
+                )
+                contrastive_losses.append(l_con)
+
+                # enqueue 目前 batch 中 假聲embedding
+                negative_queue.dequeue_and_enqueue(expert_out, labels)
+            else:
+                l_con = torch.zeros(1, device=device)
+
+            # 可視需要印 debug
+            # print(f"{modality} - CE={loss_ce.item():.4f}, L_len={l_len.item():.4f}, L_con={l_con.item():.4f}")
 
         # -----------------------------
-        # (B) 計算多模態對齊損失 + 分類損失，一次 backprop
+        # B) 多模態對齊 loss (第一階段會用)
         # -----------------------------
-        # 先把各模態 CE Loss 做平均 (或可直接 sum)
-        total_ce = sum(classification_losses) / len(classification_losses)
-
-        # 計算對齊損失
-        alignment_loss = multi_modal_alignment_loss(connector_outputs)
-        # 透過 alpha_align 去調整對齊損失的權重
-        total_loss = total_ce + alpha_align * alignment_loss
+        if alpha_align > 0.0:
+            align_loss = multi_modal_alignment_loss(connector_outputs_dict)
+        else:
+            align_loss = torch.zeros(1, device=device)
 
         # -----------------------------
-        # (C) 反向傳播 & 更新
+        # C) 合併所有 loss
+        # -----------------------------
+        sum_ce = torch.stack(ce_losses).mean() if len(ce_losses) > 0 else torch.zeros(1, device=device)
+        sum_len = torch.stack(length_losses).mean() if len(length_losses) > 0 else torch.zeros(1, device=device)
+        sum_con = torch.stack(contrastive_losses).mean() if len(contrastive_losses) > 0 else torch.zeros(1, device=device)
+
+        # 檢查 loss 是否為 nan
+        if torch.isnan(sum_ce):
+            print("Warning: NaN detected in sum_ce, setting it to zero.")
+            sum_ce = torch.zeros(1, device=device)
+        if torch.isnan(sum_len):
+            print("Warning: NaN detected in sum_len, setting it to zero.")
+            sum_len = torch.zeros(1, device=device)
+        if torch.isnan(sum_con):
+            print("Warning: NaN detected in sum_con, setting it to zero.")
+            sum_con = torch.zeros(1, device=device)
+        if torch.isnan(align_loss):
+            print("Warning: NaN detected in align_loss, setting it to zero.")
+            align_loss = torch.zeros(1, device=device)
+
+        total_loss = sum_ce + alpha_length * sum_len + alpha_contrast * sum_con + alpha_align * align_loss
+
+        # -----------------------------
+        # D) backward + update
         # -----------------------------
         optimizer.zero_grad()
         total_loss.backward()
         optimizer.step()
 
         # -----------------------------
-        # (D) 統計到 epoch 累加
+        # E) 統計
         # -----------------------------
-        total_samples_epoch += len(labels)
-        total_loss_epoch += total_loss.item() * len(labels)
+        bs = labels.size(0)
+        total_loss_epoch += total_loss.item() * bs
+        total_samples_epoch += bs
 
     avg_loss_epoch = total_loss_epoch / total_samples_epoch
-    print(f"平均 Loss: {avg_loss_epoch:.4f}")
+    print(f"[train_epoch] Avg Loss = {avg_loss_epoch:.4f}")
 
     return avg_loss_epoch
 
@@ -183,7 +306,6 @@ def validation_phase(
     valid_dataloader,
     encoders,
     wav2vec_extractor,
-    preprocessors,
     connectors,
     experts,
     classifier,
@@ -198,8 +320,6 @@ def validation_phase(
     # 切換到 eval 模式
     for encoder in encoders.values():
         encoder.eval()
-    for preprocessor in preprocessors.values():
-        preprocessor.eval()
     for connector in connectors.values():
         connector.eval()
     for expert in experts.values():
@@ -223,8 +343,7 @@ def validation_phase(
             # preprocessed_output = preprocessors[modality](output)
             connector_output = connectors[modality](preprocessed_output)
             expert_output = experts[modality](connector_output)
-            task_prompt = None
-            classifier_output = classifier(expert_output, task_prompt)
+            classifier_output = classifier(expert_output)
 
             # 計算Loss
             loss = criterion(classifier_output, labels)
@@ -269,24 +388,6 @@ def validation_phase(
     # 回傳(平均Loss, 平均EER)，看你要怎麼接在外部
     return avg_loss, avg_eer
 
-"""
-    下採樣數據集，保留所有真樣本，並將假樣本的數量控制為真樣本的 target_fake_ratio 倍。
-"""
-def downsample_data(meta_path: str, dataset_name: str, target_fake_ratio: int = 2) -> tuple:
-    print(f"Processing dataset: {dataset_name}")
-    meta = pd.read_csv(meta_path)
-    
-    # 提取真實和假樣本索引
-    real_indices = meta[meta['label'] == 'bonafide'].index.tolist()
-    spoof_indices = meta[meta['label'] == 'spoof'].index.tolist()
-    
-    real_indices = random.sample(real_indices, 100)
-
-    # 設定下採樣目標
-    spoof_indices = random.sample(spoof_indices, 300)
-    
-    print(f'Real samples: {len(real_indices)}, Spoof samples: {len(spoof_indices)}')
-    return real_indices, spoof_indices
 
 """
     這個函數用來取得模態的 embedding。
