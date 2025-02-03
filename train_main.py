@@ -65,6 +65,9 @@ def main(args):
             alpha_contrast = .0
             alpha_length = .0
 
+        # alpha_contrast = .0
+        # alpha_length = .0
+        # alpha_align = .0
         train_loss = train(
             train_dataloader,
             encoders,

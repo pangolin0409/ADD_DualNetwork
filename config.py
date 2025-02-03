@@ -5,7 +5,7 @@ def init():
     parser = argparse.ArgumentParser(description="Train Q-Former Connector for Audio Deepfake Detection")
     # 模型參數
     parser.add_argument("--input_dim", type=int, default=1024, help="Input feature dimension from RawNet2/Wav2Vec2")
-    parser.add_argument("--query_dim", type=int, default=256, help="Projected feature dimension")
+    parser.add_argument("--query_dim", type=int, default=768, help="Projected feature dimension")
     parser.add_argument("--tdnn_hidden_dim", type=int, default=256, help="Projected feature dimension")
     parser.add_argument("--num_queries", type=int, default=4, help="Number of learnable queries")
     parser.add_argument("--num_heads", type=int, default=4, help="Number of attention heads in Transformer")

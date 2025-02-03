@@ -12,7 +12,7 @@ from models.rawnet3.RawNet3 import RawNet3
 from models.rawnet3.RawNetBasicBlock import Bottle2neck
 from models.speechsplit.model import Generator_3
 from models.speechsplit.hparams import hparams
-from models.experts.ExpertMLP import ExpertTDNN
+from models.experts.ExpertMLP import LCNN
 from models.connectors.Qformer import MLPConnector
 from models.classifier.AudioClassifier import SimpleMLPClassifier
 
@@ -84,10 +84,8 @@ def get_components(args, modality_input_dims):
     experts = {}
     for modality in encoders.keys():
         # 假設 ExpertTDNN(input_dim=args.query_dim, tdnn_hidden_dim=args.tdnn_hidden_dim)
-        experts[modality] = ExpertTDNN(
-            input_dim=args.query_dim, 
-            hidden_dim=args.tdnn_hidden_dim,
-            device=device
+        experts[modality] = LCNN(
+            enc_dim=args.query_dim
         ).to(device)
 
     # -------------------
