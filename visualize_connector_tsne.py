@@ -3,12 +3,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 import torch
-from trainer import get_modality_embedding, downsample_data, get_components
+from trainer import get_modality_embedding, get_components
 from torch.utils.data import DataLoader, ConcatDataset, Subset
 from data.dataloader import RawAudio
 from config import init
 import torch.nn.functional as F
 import os
+from load_datasets import load_test_data
 
 def extract_connector_features_and_labels(
     dataloader, encoders, connectors, device, wav2vec_extractor
@@ -130,7 +131,7 @@ if __name__=='__main__':
 
     training_set_list = []
     for name, training_set in training_sets.items():
-        real_indices, spoof_indices = downsample_data(meta_path=f'../datasets/{name}/train/meta.csv', dataset_name=name, target_fake_ratio=2)
+        real_indices, spoof_indices = load_test_data(meta_path=f'../datasets/{name}/train/meta.csv', dataset_name=name, target_fake_ratio=2)
         real_subset = Subset(training_set, real_indices)
         spoof_subset = Subset(training_set, spoof_indices)
         adjusted_set = ConcatDataset([real_subset, spoof_subset])

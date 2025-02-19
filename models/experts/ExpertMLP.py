@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
-from transformers import AutoConfig, AutoModel
+from transformers import AutoConfig, AutoModel, AutoTokenizer
 from torch.nn import functional as F
 class ExpertMLP(nn.Module):
     def __init__(self, model_name="gpt2", model_dir="./pretrained_models/gpt2_local"):
         super().__init__()
-        self.config = AutoConfig.from_pretrained(model_name, cache_dir=model_dir)
+        self.config = AutoConfig.from_pretrained(model_dir)
         # 載入 GPT2Model，但我們只用其中的 blocks, ln_f 等
         self.llm = AutoModel.from_pretrained(model_name, cache_dir=model_dir, config=self.config)
 
@@ -178,57 +178,36 @@ class MaxFeatureMap2D(nn.Module):
         # maximize on the 2nd dim
         m, i = inputs.view(*shape).max(self.max_dim)
         return m
-    
-class LCNN(nn.Module):
-    def __init__(self, enc_dim):
-        super(LCNN, self).__init__()
-        self.enc_dim = enc_dim
-        self.conv1 = nn.Sequential(nn.Conv2d(1, 64, (5, 5), 1, padding=(2, 2)),
-                                   MaxFeatureMap2D(),
-                                   nn.MaxPool2d((2, 2), (2, 2)))
-        self.conv2 = nn.Sequential(nn.Conv2d(32, 64, (1, 1), 1, padding=(0, 0)),
-                                   MaxFeatureMap2D(),
-                                   nn.BatchNorm2d(32, affine=False))
-        self.conv3 = nn.Sequential(nn.Conv2d(32, 96, (3, 3), 1, padding=(1, 1)),
-                                   MaxFeatureMap2D(),
-                                   nn.MaxPool2d((2, 2), (2, 2)),
-                                   nn.BatchNorm2d(48, affine=False))
-        self.conv4 = nn.Sequential(nn.Conv2d(48, 96, (1, 1), 1, padding=(0, 0)),
-                                   MaxFeatureMap2D(),
-                                   nn.BatchNorm2d(48, affine=False))
-        self.conv5 = nn.Sequential(nn.Conv2d(48, 128, (3, 3), 1, padding=(1, 1)),
-                                   MaxFeatureMap2D(),
-                                   nn.MaxPool2d((2, 2), (2, 2)))
-        self.conv6 = nn.Sequential(nn.Conv2d(64, 128, (1, 1), 1, padding=(0, 0)),
-                                   MaxFeatureMap2D(),
-                                   nn.BatchNorm2d(64, affine=False))
-        self.conv7 = nn.Sequential(nn.Conv2d(64, 64, (3, 3), 1, padding=(1, 1)),
-                                   MaxFeatureMap2D(),
-                                   nn.BatchNorm2d(32, affine=False))
-        self.conv8 = nn.Sequential(nn.Conv2d(32, 64, (1, 1), 1, padding=(0, 0)),
-                                   MaxFeatureMap2D(),
-                                   nn.BatchNorm2d(32, affine=False))
-        self.conv9 = nn.Sequential(nn.Conv2d(32, 64, (3, 3), 1, padding=[1, 1]),
-                                   MaxFeatureMap2D(),
-                                   nn.MaxPool2d((2, 2), (2, 2)))
-        self.out = nn.Sequential(nn.Dropout(0.7),
-                                 nn.Linear(24576, 160),
-                                 MaxFeatureMap2D(),
-                                 nn.Linear(80, self.enc_dim))
 
-    def forward(self, x):
+class LLMExpert(nn.Module):
+    def __init__(self, llm_name="gpt2", prompt="Classify the audio as Real or Fake", model_dir="./pretrained_models/gpt2"):
+        super().__init__()
+        self.llm = AutoModel.from_pretrained(model_dir)
+        self.prompt_text = prompt
 
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.conv5(x)
-        x = self.conv6(x)
-        x = self.conv7(x)
-        x = self.conv8(x)
-        x = self.conv9(x)
-        feat = torch.flatten(x, 1)
-        print(feat.shape)
-        feat = self.out(feat)
+        # 凍結 LLM 參數 (若需要微調則可移除)
+        for param in self.llm.parameters():
+            param.requires_grad = False
 
-        return feat
+    def forward(self, embeddings, task_prompt=None):
+        """
+        Args:
+          embeddings: [batch_size, seq_len, hidden_dim] 的浮點張量 (專家輸出)
+          task_prompt: (選擇性) 用來取代預設 prompt_text
+        Returns:
+          logits: [batch_size, 2]
+        """
+
+        # 1) 使用自訂的 prompt 或 fallback 到 self.prompt_text
+        if task_prompt is None:
+            task_prompt = self.prompt_text
+      
+        outputs = self.llm(inputs_embeds=embeddings)
+
+        # 7) 取最後 token (或其他位置) 來做最終線性分類
+        #    這邊選擇最後一個 token => [:, -1, :]
+        #    若 seq_len=1 => -1 位置即專家 token
+        #    若 prompt_len+seq_len>1 => -1 位置則看你需求
+        final_hidden = outputs.last_hidden_state[:, -1, :]  # [batch_size, hidden_dim]
+
+        return final_hidden

@@ -23,7 +23,7 @@ def main(args):
     # 載入模型組件
     encoders, wav2vec_extractor, connectors, experts, classifier = get_components(args=args, modality_input_dims=modality_input_dims)
 
-    negative_queue = NegativeQueue(feature_dim=args.tdnn_hidden_dim, queue_size=args.queue_size)
+    negative_queue = NegativeQueue(feature_dim=args.query_dim, queue_size=args.queue_size)
 
     
     params_to_update = []
@@ -59,8 +59,8 @@ def main(args):
         else:
             alpha_align = .0
         if args.is_train_experts:
-            alpha_contrast = 1.0
-            alpha_length = 1.0
+            alpha_contrast = .5
+            alpha_length = .5
         else:
             alpha_contrast = .0
             alpha_length = .0
@@ -110,20 +110,20 @@ def main(args):
         print(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.6f}")
 
         # 保存檢查點
-        # for modality, connector in connectors.items():
-        #     torch.save(
-        #         connector.state_dict(),
-        #         os.path.join(expert_checkpoint_dir, f"{modality}_connector_epoch_{epoch}.pth")
-        #     )
-        # for modality, expert in experts.items():
-        #     torch.save(
-        #         expert.state_dict(),
-        #         os.path.join(expert_checkpoint_dir, f"{modality}_expert_epoch_{epoch}.pth")
-        #     )
-        # torch.save(
-        #     classifier.state_dict(),
-        #     os.path.join(classifier_checkpoint_dir, f"classifier_epoch_{epoch}.pth")
-        # )
+        for modality, connector in connectors.items():
+            torch.save(
+                connector.state_dict(),
+                os.path.join(expert_checkpoint_dir, f"{modality}_connector_epoch_{epoch}.pth")
+            )
+        for modality, expert in experts.items():
+            torch.save(
+                expert.state_dict(),
+                os.path.join(expert_checkpoint_dir, f"{modality}_expert_epoch_{epoch}.pth")
+            )
+        torch.save(
+            classifier.state_dict(),
+            os.path.join(classifier_checkpoint_dir, f"classifier_epoch_{epoch}.pth")
+        )
 
         # 檢查是否是最佳 EER
         if val_eer < best_eer:
