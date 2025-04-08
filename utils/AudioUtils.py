@@ -5,6 +5,7 @@ import numpy as np
 import parselmouth
 from parselmouth.praat import call
 from skimage.filters import gabor
+from torch.nn import functional as F
 def extract_mel_spectrogram(audio, sr=16000, n_mels=80, max_len_pad=192):
     if isinstance(audio, torch.Tensor):
         # 移到 CPU，並轉 numpy
@@ -35,33 +36,74 @@ def extract_pitch(audio, sr=16000, n_fft=2048, hop_length=512, max_len_pad=192):
     f0_tensor = torch.tensor(f0_quantized).unsqueeze(0).transpose(1, 2)
     return f0_tensor.float()  # 確保輸出類型為 float
 
+def extract_DI_formants_with_praat_batch(
+    audio_paths,          # 批量音檔路徑 (List[str])
+    time_step=0.01,
+    max_formant=5500,
+    max_freq_for_map=6000,
+    freq_resolution=50,
+    target_freq_bins=50,
+    target_time_bins=100
+):
+    """
+    1) 對多個音檔進行 DI-Formants 特徵擷取流程：
+       - 使用 Praat（Burg 方法）提取 F1, F2, F3 軌跡
+       - 根據 F1, F2, F3 建立二值時頻圖
+       - 對二值圖應用 Gabor 濾波，得到 4-channel 特徵，形狀 (4, f_bins, t_bins)
+    2) 由於不同音檔可能導致 f_bins 或 t_bins 不一致，
+       因此利用 interpolate 將每個結果調整為固定形狀 (4, target_freq_bins, target_time_bins)
+    3) 最終回傳 tensor 形狀為 (B, 4, target_freq_bins, target_time_bins)
+    """
+    batch_di_formants = []
+
+    for audio_path in audio_paths:
+        # (A) 利用 Praat 提取 Formant Trajectories (F1, F2, F3)
+        times, F1, F2, F3 = extract_formant_trajectories(
+            audio_path, 
+            time_step=time_step,
+            max_formant=max_formant
+        )
+        # (B) 根據 F1, F2, F3 建立 binary 時頻圖
+        binary_map = create_time_frequency_map(
+            F1, F2, F3,
+            max_freq=max_freq_for_map,
+            freq_resolution=freq_resolution
+        )
+        # (C) 使用 Gabor 濾波，獲得 DI-Formants 特徵，shape 預期為 (4, f_bins, t_bins)
+        di_formants_4ch = apply_gabor_filters(binary_map)
+        # di_formants_4ch 可能各音檔 time_bins 不一致，例如有的為 120，有的為 100
+        
+        # (D) 利用 F.interpolate 調整 di_formants_4ch 至固定形狀 (4, target_freq_bins, target_time_bins)
+        # 先轉成 tensor，並增加 batch 維度
+        di_tensor = torch.tensor(di_formants_4ch, dtype=torch.float32).unsqueeze(0)  # shape: [1, 4, f_bins, t_bins]
+        di_resized = F.interpolate(di_tensor, size=(target_freq_bins, target_time_bins), mode='bilinear', align_corners=False)
+        di_resized = di_resized.squeeze(0)  # shape: [4, target_freq_bins, target_time_bins]
+        
+        # 轉回 numpy (或直接保留 tensor也可)
+        batch_di_formants.append(di_resized.cpu().numpy())
+
+    # 將所有音檔 DI-Formants 組合成一個 tensor，形狀 [B, 4, target_freq_bins, target_time_bins]
+    batch_di_formants = np.stack(batch_di_formants, axis=0)
+    batch_di_formants_tensor = torch.tensor(batch_di_formants, dtype=torch.float32)
+    
+    return batch_di_formants_tensor
 
 def extract_formant_trajectories(audio_path, time_step=0.01, max_formant=5500, n_formants=5):
     """
     使用 Praat (Burg 演算法) 追蹤語音中的 formants。
     回傳 (times, F1, F2, F3)，皆為 numpy array。
-    
-    參數說明:
-    - time_step: 計算 formant 時的時間間距 (秒)，如 0.01 即每 10ms 估計一次
-    - max_formant: 最高 formant 頻率上限，女性或童聲建議可更高 (5500~6000)
-    - n_formants: 預設分析幾條 formants (此處先設 5，實際可視需求調)
     """
     sound = parselmouth.Sound(audio_path)
     
     # Praat: To Formant (burg)
-    #   參數: 
-    #       1) time_step   2) max_number_of_formants 
-    #       3) max_formant 4) window_length
-    #       5) pre_emphasis_from
     formant_object = sound.to_formant_burg(
         time_step=time_step,
         max_number_of_formants=n_formants,
-        maximum_formant=max_formant,  # ← 改為 maximum_formant
+        maximum_formant=max_formant,
         window_length=0.025,
         pre_emphasis_from=50
     )
-
-
+    
     # 取得整段音檔的時間長度
     duration = sound.get_total_duration()
     times = np.arange(0, duration, time_step)
@@ -70,7 +112,6 @@ def extract_formant_trajectories(audio_path, time_step=0.01, max_formant=5500, n
     F1_list, F2_list, F3_list = [], [], []
     
     for t in times:
-        # 該時間點落在哪一個 frame
         f1 = formant_object.get_value_at_time(formant_number=1, time=t) or 0.0
         f2 = formant_object.get_value_at_time(formant_number=2, time=t) or 0.0
         f3 = formant_object.get_value_at_time(formant_number=3, time=t) or 0.0
@@ -98,7 +139,7 @@ def create_time_frequency_map(F1, F2, F3, time_step=0.01, max_freq=6000, freq_re
     
     for t in range(T):
         for f_val in [F1[t], F2[t], F3[t]]:
-            if f_val > 0:  # 如果沒估到可能是0
+            if f_val > 0:
                 bin_idx = int(f_val // freq_resolution)
                 if bin_idx < freq_bins:
                     binary_map[bin_idx, t] = 1.0
@@ -106,16 +147,8 @@ def create_time_frequency_map(F1, F2, F3, time_step=0.01, max_freq=6000, freq_re
 
 def gabor_filter_2d(image, theta, lam=4, psi=0, sigma=2, gamma=0.5):
     """
-    單方向 Gabor 濾波器:
-    - lam: wavelength (4)
-    - theta: [0, π/4, π/2, 3π/4]
-    - psi: phase offset (0)
-    - sigma: Gaussian envelope (lambda/2)
-    - gamma: aspect ratio (0.5)
-    
-    若 skimage.filters.gabor 不可用，可自行實作
+    單方向 Gabor 濾波器
     """
-    # frequency = 1 / lam
     frequency = 1.0 / lam
     filtered, _ = gabor(image, frequency=frequency, theta=theta, sigma_x=sigma, sigma_y=sigma/gamma)
     return filtered
@@ -140,5 +173,6 @@ def apply_gabor_filters(binary_map):
             gamma=gamma
         )
         filtered_channels.append(out)
+    
     # 堆疊成 (4, H, W)
     return np.stack(filtered_channels, axis=0)

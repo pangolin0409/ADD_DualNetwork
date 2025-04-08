@@ -6,12 +6,19 @@ import random
 """
     載入訓練和驗證數據集。
 """
-def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fake_ratio, test=False):
+def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fake_ratio, test=False, is_downsample=False):
     # 初始化 datasets 和 dataloaders
     training_sets = {}
     for dataset_name in dataset_names:
+        match dataset_name:
+            case 'CodecFake' | 'Asvspoof2019_LA':
+                wav2vec_path_prefix = f'E:/datasets/{dataset_name}'
+            case _:
+                wav2vec_path_prefix = f'D:/datasets/{dataset_name}'
+
         training_sets[dataset_name] = RawAudio(
             path_to_database=f'../datasets/{dataset_name}',
+            wav2vec_path_prefix = wav2vec_path_prefix,
             meta_csv='meta.csv',
             return_label=True,
             nb_samp=sample_rate,
@@ -20,10 +27,21 @@ def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fa
     
     training_set_list = []
     for name, training_set in training_sets.items():
+        # 如果是測試模式，則不進行下採樣
         if test:
             real_indices, spoof_indices = downsample_test_data(meta_path=f'../datasets/{name}/train/meta.csv', dataset_name=name)
         else:
-            real_indices, spoof_indices = downsample_data(meta_path=f'../datasets/{name}/train/meta.csv', dataset_name=name, target_fake_ratio=target_fake_ratio)
+            # 如果是下採樣模式，則進行下採樣
+            if is_downsample:
+                print(f"Processing dataset hhh: {name}")
+                real_indices, spoof_indices = downsample_data(meta_path=f'../datasets/{name}/train/meta.csv', dataset_name=name, target_fake_ratio=target_fake_ratio)
+            else:
+                meta = pd.read_csv(f'../datasets/{name}/train/meta.csv')
+                real_indices = meta[meta['label'] == 'bonafide'].index.tolist()
+                spoof_indices = meta[meta['label'] == 'spoof'].index.tolist()
+                
+        # real_indices = random.sample(real_indices, target_fake_count)
+        print(f'Real samples: {len(real_indices)}, Spoof samples: {len(spoof_indices)}')
         real_subset = Subset(training_set, real_indices)
         spoof_subset = Subset(training_set, spoof_indices)
         adjusted_set = ConcatDataset([real_subset, spoof_subset])
@@ -35,8 +53,15 @@ def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fa
     # 初始化 datasets 和 dataloaders
     validation_sets = {}
     for dataset_name in dataset_names:
+        match dataset_name:
+            case 'CodecFake' | 'Asvspoof2019_LA':
+                wav2vec_path_prefix = f'E:/datasets/{dataset_name}'
+            case _:
+                wav2vec_path_prefix = f'D:/datasets/{dataset_name}'
+
         validation_sets[dataset_name] = RawAudio(
             path_to_database=f'../datasets/{dataset_name}',
+            wav2vec_path_prefix = wav2vec_path_prefix,
             meta_csv='meta.csv',
             return_label=True,
             nb_samp=sample_rate,
@@ -45,11 +70,7 @@ def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fa
 
     validation_set_list = []
     for name, validation_set in validation_sets.items():
-        real_indices, spoof_indices = downsample_data(meta_path=f'../datasets/{name}/validation/meta.csv', dataset_name=name, target_fake_ratio=target_fake_ratio)
-        real_subset = Subset(validation_set, real_indices)
-        spoof_subset = Subset(validation_set, spoof_indices)
-        adjusted_set = ConcatDataset([real_subset, spoof_subset])
-        validation_set_list.append(adjusted_set)
+        validation_set_list.append(validation_set)
 
     final_validation_set = ConcatDataset(validation_set_list)
     validation_dataloader = DataLoader(final_validation_set, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=worker_size)
@@ -71,8 +92,7 @@ def downsample_data(meta_path: str, dataset_name: str, target_fake_ratio: int = 
     target_fake_count = int(len(real_indices) * target_fake_ratio)
     if len(spoof_indices) > target_fake_count:
         spoof_indices = random.sample(spoof_indices, target_fake_count)
-    # real_indices = random.sample(real_indices, target_fake_count)
-    print(f'Real samples: {len(real_indices)}, Spoof samples: {len(spoof_indices)}')
+
     return real_indices, spoof_indices
 
 
@@ -84,12 +104,12 @@ def downsample_test_data(meta_path: str, dataset_name: str) -> tuple:
     real_indices = meta[meta['label'] == 'bonafide'].index.tolist()
     spoof_indices = meta[meta['label'] == 'spoof'].index.tolist()
     
-    if len(real_indices) > 100:
-        real_indices = random.sample(real_indices, 100)
+    if len(real_indices) > 1000:
+        real_indices = random.sample(real_indices, 1000)
 
     # 設定下採樣目標
-    if len(spoof_indices) > 200:
-        spoof_indices = random.sample(spoof_indices, 200)
+    if len(spoof_indices) > 2000:
+        spoof_indices = random.sample(spoof_indices, 2000)
     
     print(f'Real samples: {len(real_indices)}, Spoof samples: {len(spoof_indices)}')
     return real_indices, spoof_indices

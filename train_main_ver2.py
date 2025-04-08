@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR, StepLR, SequentialLR
 from models.classifier.ASSIST import AasistEncoder
-from models.Detector import Detector, MemoryBank, UnknownMemoryBank, ContrastiveLoss
+from models.Detector_2 import Detector, MemoryBank, UnknownMemoryBank, ContrastiveLoss
 from load_datasets import load_datasets
 from config import init
 from utils.eval_metrics import compute_eer
@@ -87,17 +87,14 @@ def train_model(args):
     # aasist_model_config = aasist_config["model_config"]
     # aasist_encoder = AasistEncoder(aasist_model_config).to(device)
     processor = Wav2Vec2FeatureExtractor.from_pretrained(args.wav2vec_path)
-    wav2vec_model = Wav2Vec2Model.from_pretrained(args.wav2vec_path).to(device)
+    wav2vec_model = Wav2Vec2Model.from_pretrained(args.wav2vec_path, output_hidden_states=True).to(device)
     wav2vec_model.eval()
     
-    model = Detector(encoder_dim=args.encoder_dim, expert_dim=args.expert_dim, 
-    num_experts=args.routing_dim, top_k=args.top_k, num_classes=args.num_classes).to(device)
+    model = Detector(encoder_dim=args.encoder_dim, expert_dim=args.expert_dim, num_classes=args.num_classes, 
+                 layer_ids=[9, 10, 11, 12], fusion_mode="avg").to(device)
 
     # 建立 Memory Bank 用來儲存 prototype（對比學習 anchor）
     # 這裡我們有 2 類: 0: bonafide, 1: spoof；並且用相同維度更新 feature 和 routing prototype
-    feature_mem = MemoryBank(feature_dim=args.expert_dim, num_classes=args.num_classes, momentum=0.99).to(device)
-    routing_mem = MemoryBank(feature_dim=args.routing_dim, num_classes=args.num_classes, momentum=0.99).to(device)
-    unknown_mem = UnknownMemoryBank(feature_dim=args.expert_dim, num_clusters=3).to(device)
     
     # 建立 Contrastive Loss（NT-Xent Loss）
     contrastive_loss_fn = ContrastiveLoss(temperature=0.07)
@@ -106,7 +103,7 @@ def train_model(args):
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     warmup_epochs = args.warmup_epochs
     scheduler_warmup = LambdaLR(optimizer, lambda epoch: min(epoch / warmup_epochs, 1.0))
-    scheduler_step = StepLR(optimizer, step_size=5, gamma=0.7)
+    scheduler_step = StepLR(optimizer, step_size=3, gamma=0.5)
     scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_step], milestones=[warmup_epochs])
     
     # 建立 DataLoader (假設 load_datasets 已實現)
@@ -118,7 +115,9 @@ def train_model(args):
 
     best_eer = 999.0
     best_val_loss = float("inf")
+    patience = args.patience
     patience_counter = 0
+
 
     os.makedirs(os.path.join(args.save_path, args.model_name), exist_ok=True)
     best_model_path = os.path.join(args.save_path, args.model_name, "best_model.pth")
@@ -129,89 +128,36 @@ def train_model(args):
         total_samples = 0
         correct = 0
         total_inconsistent = 0
-        for batch_idx, (wave, label, wav2vec_fts) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
+        for batch_idx, (wave, label, wav2vec_ft) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
             label = label.to(device)
-            wav2vec_fts = wav2vec_fts.to(device)
+            # wav2vec_ft = wav2vec_ft.to(device)
+            waveforms_list = [w.cpu().numpy() for w in wave] 
+            inputs = processor(waveforms_list, sampling_rate=16000, return_tensors="pt", padding=True)
+            print(inputs['input_values'].shape)  # 應該是 [batch_size, seq_len]
+            input_values = inputs.input_values.to(device)
+            attention_mask = inputs.attention_mask.to(device)
+            wav2vec_hidden_state = wav2vec_model(input_values, attention_mask=attention_mask)
             optimizer.zero_grad()
-            # forward pass，這裡我們根據一定機率啟用 router augmentation
-            # random.random() < args.router_aug_prob, 則啟用 routing augmentation
-            router_aug_flag = (random.random() < args.router_aug_prob)
-            # spoof 樣本才做 mask
-            aug_mask = (label == 1)
-            logits, routing, moe_output = model(wav2vec_fts=wav2vec_fts, router_aug=router_aug_flag, aug_mask=aug_mask)
-
-            # 初始化 prototype（只執行一次）
-            if epoch == 0 and batch_idx == 0:
-                with torch.no_grad():
-                    for cls in [0, 1]:
-                        cls_mask = label == cls
-                        if cls_mask.any():
-                            avg_feat = moe_output[cls_mask].mean(dim=0)
-                            feature_mem.prototypes[cls] = F.normalize(avg_feat, dim=0)
-                            routing_mem.prototypes[cls] = F.normalize(routing[cls_mask].mean(dim=0), dim=0)
+            logits, moe_output = model(wav2vec_hidden_state.hidden_states)
 
             # CrossEntropy Loss (分類 loss)
             loss_ce = ce_loss_fn(logits, label)
-
-            # 從 logits 計算 spoof probability (index 1 為 spoof)
-            spoof_prob = F.softmax(logits, dim=1)[:, 1]
-
-            # MoE 正則化：load balance 與 limp loss
-            loss_limp = model.moe.compute_limp_loss(routing)
-            loss_load = model.moe.compute_load_balance_loss(routing)
-            # loss_entropy = model.moe.compute_entropy_loss(routing)
-            
-            # Dual-space pseudo label：利用 moe_output (feature space) 與 routing (routing space)
-            # 這裡我們用 MemoryBank 中的 prototypes作為 anchor
-            pseudo_label_feat = compute_pseudo_label(moe_output, feature_mem.prototypes, mode='hard')
-            pseudo_label_rout = compute_pseudo_label(routing, routing_mem.prototypes, mode='hard')
-
-            # Consistency loss
-            if epoch >= args.consistency_warmup:
-                loss_consistency = compute_consistency_loss(pseudo_label_feat, pseudo_label_rout, logits, soft=True)
-                # 這些樣本是 known，我們希望它們遠離 unknown prototype
-                known_mask = (pseudo_label_feat == pseudo_label_rout)
-                known_feats = moe_output[known_mask]
-                loss_pushaway = push_away_from_unknown(known_feats, unknown_mem.get())
-            else:
-                loss_consistency = torch.tensor(0.0, device=device)
-                loss_pushaway = torch.tensor(0.0, device=device)
 
             # Contrastive loss（用 moe_output 來對比）
             loss_contrastive = contrastive_loss_fn(moe_output, label)
 
             # 組合總 loss（權重可根據 args 調整）
             total_batch_loss = (args.lambda_ce * loss_ce + 
-                                args.lambda_contrastive * loss_contrastive + 
-                                args.lambda_consistency * loss_consistency + 
-                                args.lambda_moe * (loss_limp + loss_load) + 
-                                args.lambda_unknown * loss_pushaway)
-            print(f'loss_ce: {loss_ce:.4f}, loss_contrastive: {loss_contrastive:.4f}, loss_consistency: {loss_consistency:.4f}, loss_limp: {loss_limp:.4f}, loss_load: {loss_load:.4f}, loss_pushaway: {loss_pushaway:.4f}')
+                                args.lambda_contrastive * loss_contrastive)
+            # print(f'loss_ce: {loss_ce:.4f}, loss_contrastive: {loss_contrastive:.4f}, loss_consistency: {loss_consistency:.4f}, loss_limp: {loss_limp:.4f}, loss_load: {loss_load:.4f}, loss_entropy: {loss_entropy:.4f}, loss_pushaway: {loss_pushaway:.4f}')
             total_batch_loss.backward()
             optimizer.step()
-
-            # 更新 MemoryBank (prototype) for feature and routing spaces
-            with torch.no_grad():
-                feature_mem.update(moe_output, label)
-                routing_mem.update(routing, label)
 
             total_loss += total_batch_loss.item() * label.size(0)
             total_samples += label.size(0)
             preds = torch.argmax(logits, dim=1)
             correct += (preds == label).sum().item()
 
-            inconsistent = (pseudo_label_feat != pseudo_label_rout)  # (B,)
-            batch_inconsistent_count = inconsistent.sum().item()
-            total_inconsistent += batch_inconsistent_count
-
-        if epoch % args.unknown_cluster_interval == 0:
-            inconsistent_mask = (pseudo_label_feat != pseudo_label_rout)
-            if inconsistent_mask.sum() >= unknown_mem.get().size(0):
-                cluster_input = moe_output[inconsistent_mask].detach().cpu().numpy()
-                kmeans = KMeans(n_clusters=unknown_mem.get().size(0), random_state=42)
-                kmeans.fit(cluster_input)
-                centroids = torch.tensor(kmeans.cluster_centers_, dtype=torch.float32, device=device)
-                unknown_mem.update_from_kmeans(centroids)
 
         avg_loss = total_loss / total_samples
         train_acc = correct / total_samples
@@ -224,7 +170,7 @@ def train_model(args):
         print(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.5f}")
         
         # 驗證
-        eer, val_loss = validate(model, val_loader, device, args, unknown_mem)
+        eer, val_loss = validate(model, val_loader, device, args, processor, wav2vec_model)
         print(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}")
 
         with open(os.path.join(args.save_path, args.model_name, "log.txt"), "a") as f:
@@ -257,7 +203,7 @@ def train_model(args):
 ###########################################
 # 驗證函數（包含 EER 計算）
 ###########################################
-def validate(model, val_loader, device, args, unknown_mem):
+def validate(model, val_loader, device, args, processor, wav2vec_model):
     model.eval()
     total_loss = 0.0
     total_samples = 0
@@ -266,28 +212,19 @@ def validate(model, val_loader, device, args, unknown_mem):
     label_list = []
     
     with torch.no_grad():
-        for (wave, label, wav2vec_fts) in tqdm(val_loader, desc="Validation"):
+        for (wave, label, wav2vec_ft) in tqdm(val_loader, desc="Validation"):
             label = label.to(device)
-            wav2vec_fts = wav2vec_fts.to(device)
-            
-            logits, routing, moe_output = model(wav2vec_fts=wav2vec_fts, router_aug=False)
+            wave = wave.to(device)
+            inputs = processor(wave, sampling_rate=16000, return_tensors="pt", padding=True)
+            input_values = inputs.input_values.to(device)
+            attention_mask = inputs.attention_mask.to(device)
+            wav2vec_hidden_state = wav2vec_model(input_values, attention_mask=attention_mask)      
+            logits, _ = model(wav2vec_hidden_state.hidden_states)
             loss = ce_loss_fn(logits, label)
             total_loss += loss.item() * label.size(0)
             total_samples += label.size(0)
             
-            p_spoof = F.softmax(logits, dim=1)[:, 1]  # spoof 機率
-            # === 新增信心修正 ===
-            unk_proto = unknown_mem.get()     # (K, D)
-            features = F.normalize(moe_output, dim=1)
-            unk_proto = F.normalize(unk_proto, dim=1)
-
-            # 計算每個樣本與 unknown prototype 的最大相似度
-            sim = torch.matmul(features, unk_proto.T)  # (B, K)
-            sim_max, _ = torch.max(sim, dim=1)         # (B,)
-
-            # 調整 spoof probability（加權上升）
-            lambda_adj = 0.2  # ⚠️ 可調超參
-            scores = torch.clamp(p_spoof + lambda_adj * sim_max, 0, 1)
+            scores = F.softmax(logits, dim=1)[:, 1]  # spoof 機率
             
             score_list.append(scores)
             label_list.append(label)

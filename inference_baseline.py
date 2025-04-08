@@ -9,7 +9,7 @@ from torch.nn.functional import softmax
 import numpy as np
 from models.classifier.ASSIST import AasistEncoder
 import json
-from models.Detector import Detector
+from train_main_baseline import DownStreamLinearClassifier
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.manifold import TSNE
@@ -33,15 +33,16 @@ def init():
     parser.add_argument('-nb_worker', type=int, default=8)
     parser.add_argument('--batch_size', type=int, default=32, help="Batch size for inference")  # 新增 batch_size 參數
     parser.add_argument("--gpu", type=str, help="GPU index", default="2")
+    parser.add_argument("--aasist_config_path", type=str, default='./config/AASIST.conf', help="Path to the AASIST model config")
     args = parser.parse_args()
     args.cuda = torch.cuda.is_available()
     args.device = torch.device("cuda" if args.cuda else "cpu")
     return args
 
     
-def load_model(model_class, model_path, device, **model_args):
+def load_model(model_class, model_path, device, aasist_encoder):
     # 初始化模型
-    model = model_class(**model_args).to(device)
+    model = model_class(aasist_encoder).to(device)
     
     # 載入檢查點
     checkpoint = torch.load(model_path, map_location=device)
@@ -87,23 +88,16 @@ def draw_ft_dist(features, labels,task, label_names=None):
     plt.close()
     
 def test_on_desginated_datasets(task, model_path, save_path):
-    # with open(args.aasist_config_path, "r") as f_json:
-    #     aasist_config = json.loads(f_json.read())
-    # aasist_model_config = aasist_config["model_config"]
-    # aasist_encoder = AasistEncoder(aasist_model_config).to(device)
-    model_args = {
-    'encoder_dim': args.encoder_dim,
-    'expert_dim': args.expert_dim,
-    'num_experts': args.routing_dim,
-    'top_k': args.top_k,
-    'num_classes': args.num_classes
-    }
-
+    with open(args.aasist_config_path, "r") as f_json:
+        aasist_config = json.loads(f_json.read())
+    aasist_model_config = aasist_config["model_config"]
+    aasist_encoder = AasistEncoder(aasist_model_config).to(device)
+    
     model = load_model(
-        model_class=Detector,
+        model_class=DownStreamLinearClassifier,
         model_path=model_path,
         device=device,
-        **model_args)
+        aasist_encoder=aasist_encoder,)
     model.eval()
 
     # 加載數據集 (改為批量推理)
@@ -133,8 +127,8 @@ def test_on_desginated_datasets(task, model_path, save_path):
     # 用於保存結果
     score_loader = []
     label_loader = []
-    local_gating_loader = []
-    moe_feature_loader = []
+    # local_gating_loader = []
+    # moe_feature_loader = []
     model.eval()
 
     # 遍歷測試數據
@@ -142,19 +136,16 @@ def test_on_desginated_datasets(task, model_path, save_path):
         waveforms, labels, wav2vec_fts = data_slice
         # waveforms = waveforms.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
-        wav2vec_fts = wav2vec_fts.to(device, non_blocking=True)
+        # wav2vec_fts = wav2vec_fts.to(device, non_blocking=True)
+        wav2vec_ft = wav2vec_fts[:,2,:,:].to(device)
         # 模型推理 (批量)
         with torch.no_grad():
-            logits, routing, moe_output = model(wav2vec_fts=wav2vec_fts, router_aug=False)
+            logits = model(wav2vec_ft)
             scores = softmax(logits, dim=1)[:, 1]
         
-        # 保存專家使用量
-        local_gating_loader.extend(routing.detach().cpu().numpy().tolist())
-
         # 保存分數和標籤
         score_loader.extend(scores.detach().cpu().numpy().tolist())
         label_loader.extend(labels.detach().cpu().numpy().tolist())
-        moe_feature_loader.extend(moe_output.detach().cpu().numpy().tolist())
 
     scores = np.array(score_loader)
     labels = np.array(label_loader)
@@ -169,8 +160,7 @@ def test_on_desginated_datasets(task, model_path, save_path):
     with open(os.path.join(save_path, "inference.txt"), "a") as f:
         f.write(f"Test sets: {task}, EER: {eer:.4f}, FFR: {frr:.4f}, FAR: {far:.4f}, Threshold: {threshold:.4f}\n")
 
-    draw_expert_usage(local_gating_loader, 'Local', task)
-    draw_ft_dist(moe_feature_loader, labels, task, label_names=["Bona fide", "Spoof"])
+    # draw_ft_dist(moe_feature_loader, labels, task, label_names=["Bona fide", "Spoof"])
     
 if __name__ == "__main__":
     args = init()
