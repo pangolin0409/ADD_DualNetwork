@@ -1,5 +1,5 @@
 from torch.utils.data import DataLoader, ConcatDataset, Subset
-from data.dataloader import RawAudio
+from src.data.dataloader import RawAudio
 import pandas as pd
 import random
 

@@ -15,7 +15,6 @@ train:
   batch_size: 128
   lr: 0.0001
   num_epochs: 10
-  device: "cuda"
   nb_worker: 4
   patience: 5
   warmup_epochs: 3

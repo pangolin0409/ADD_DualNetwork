@@ -7,4 +7,5 @@
 /tsne_plots/
 /test/
 /checkpoints/
-/images/
+/plot/
+/wandb/

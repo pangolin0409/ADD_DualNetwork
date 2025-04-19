@@ -5,10 +5,9 @@ from tqdm import tqdm, trange
 from transformers import Wav2Vec2FeatureExtractor
 import onnxruntime as ort
 import os, random, numpy as np
-from models.Detector import LayerSelectorMoE, Classifier
-from utils.eval_metrics import compute_eer
+from src.models.Detector import LayerSelectorMoE, Classifier
+from src.utils.eval_metrics import compute_eer
 from src.data.load_datasets import load_datasets
-from config import init
 import gc
 
 def set_seed(seed):
@@ -123,7 +122,12 @@ def validate(selector, classifier, val_loader, device):
     eer, frr, far, threshold = compute_eer(scores[labels == 1], scores[labels == 0])
     return eer, total_loss / len(labels)
 
+def train_main(args):
+    """給 main.py 用的入口點"""
+    train_layer_selector(args)
+
 def main():
+    from config.config import init
     args = init()
     set_seed(args.seed)
     train_layer_selector(args)

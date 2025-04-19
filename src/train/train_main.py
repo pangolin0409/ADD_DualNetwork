@@ -14,9 +14,8 @@ from transformers import Wav2Vec2FeatureExtractor
 import onnxruntime as ort
 from src.models.Detector import Detector, MemoryBank, UnknownMemoryBank, ContrastiveLoss, LayerSelectorMoE, Classifier
 from src.data.load_datasets import load_datasets
-from config.config import init
 from src.utils.eval_metrics import compute_eer
-
+import wandb
 # 把所有「隨機」都固定下來，讓每次訓練結果都一樣
 # 可重現實驗結果
 def set_seed(seed: int):
@@ -87,6 +86,12 @@ def safe_release(*objs):
 # 訓練程式碼
 ###########################################
 def train_model(args):
+    wandb.init(
+        project="audio-deepfake-detection",  #專案名稱
+        name=f"{args.model_name}",  # 實驗名稱
+        config=vars(args),
+    )
+
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     processor = Wav2Vec2FeatureExtractor.from_pretrained(args.wav2vec_path)
@@ -274,6 +279,21 @@ def train_model(args):
                 if patience_counter >= args.patience:
                     print(f"Early stopping triggered after {epoch+1} epochs.")
                     break
+
+            wandb.log({
+                "EER": eer,
+                "accuracy": train_acc,
+                "epoch_loss": avg_loss,
+                "epoch_val_loss": val_loss,
+                "loss/total": total_loss.item(),
+                "loss/ce": loss_ce.item(),
+                "loss/contrastive": loss_contrastive.item(),
+                "loss/consistency": loss_consistency.item(),
+                "loss/loss_limp": loss_limp.item(),     
+                "loss/loss_load": loss_load.item(),
+                "loss/pushaway": loss_pushaway.item(),
+                "loss/unknown_cluster": epoch_inconsistency_ratio,
+            })
     finally:
         safe_release(selector, classifier, onnx_session)
         print("Cleaned up models and sessions.")
@@ -326,7 +346,12 @@ def validate(model, selector, val_loader, device, args, unknown_mem):
     eer, frr, far, threshold = compute_eer(scores[labels == 1], scores[labels == 0])
     return eer, avg_loss
 
+def train_main(args):
+    """給 main.py 用的入口點"""
+    train_model(args)
+
 def main():
+    from config.config import init
     args = init()
     train_model(args)
 
