@@ -16,6 +16,8 @@ from src.models.Detector import Detector, MemoryBank, UnknownMemoryBank, Contras
 from src.data.load_datasets import load_datasets
 from src.utils.eval_metrics import compute_eer
 import wandb
+import subprocess
+
 # 把所有「隨機」都固定下來，讓每次訓練結果都一樣
 # 可重現實驗結果
 def set_seed(seed: int):
@@ -24,6 +26,14 @@ def set_seed(seed: int):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+def get_git_branch():
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"]
+        ).decode("utf-8").strip()
+    except:
+        return "unknown-branch"
 
 # --- Dual-space pseudo label: 根據 cosine similarity 將 feature 與 prototype 進行比對 ---
 def compute_pseudo_label(features, prototypes, mode='hard'):
@@ -88,7 +98,7 @@ def safe_release(*objs):
 def train_model(args):
     wandb.init(
         project="audio-deepfake-detection",  #專案名稱
-        name=f"{args.model_name}",  # 實驗名稱
+        name=f"{get_git_branch()}_{args.model_name}",  # 實驗名稱
         config=vars(args),
     )
 
