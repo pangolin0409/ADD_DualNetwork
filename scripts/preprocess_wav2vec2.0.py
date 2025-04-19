@@ -191,13 +191,7 @@ if __name__ == '__main__':
 
     for dataset in dataset_list:
         for part in part_:
-            if dataset == 'ASVspoof2021_DF':
-                base_folder = os.path.join('E:/datasets/', dataset, part)
-                save_folder = os.path.join('D:/datasets/', dataset, part)
-            else:
-                base_folder = os.path.join('E:/datasets/', dataset, part)
-                save_folder = os.path.join('E:/datasets/', dataset, part)
-
+            base_folder = save_folder = os.path.join('F:/datasets/', dataset, part)
             audio_folder = os.path.join(base_folder, 'audio')
             output_h5_path = os.path.join(save_folder, f"wav2vec2_layers_192023_{part}.h5")
 

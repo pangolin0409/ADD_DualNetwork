@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import Wav2Vec2Model, Wav2Vec2FeatureExtractor
-from data.dataloader import PreprocessRawAudio  # 你的自定義Dataset
+from src.data.dataloader import PreprocessRawAudio  # 你的自定義Dataset
 
 # CUDA 加速設置
 torch.backends.cudnn.benchmark = True   # 對固定大小輸入加速
@@ -17,7 +17,7 @@ def extract_representation(dataset_name, sample_rate=16000, batch_size=128):
 
     # 載入 wav2vec2
     model_ckpt = './pretrained_models/wav2vec2-xls-r-300m'
-    processor = Wav2Vec2FeatureExtractor.from_pretrained(model_ckpt)
+    processor = Wav2Vec2FeatureExtractor.from_pretrained(model_ckpt, output_hidden_states=True)
     model = Wav2Vec2Model.from_pretrained(model_ckpt, output_hidden_states=True).to(device)
     model.eval()
 
@@ -41,7 +41,7 @@ def extract_representation(dataset_name, sample_rate=16000, batch_size=128):
         )
 
         # 3) 建立輸出資料夾
-        target_dir = os.path.join(f'../datasets/{dataset_name}', part_, 'wav2vec2')
+        target_dir = os.path.join(f'F:/datasets/{dataset_name}', part_, 'wav2vec2')
         os.makedirs(target_dir, exist_ok=True)
 
         print(f"Start processing {dataset_name} - {part_} ...")

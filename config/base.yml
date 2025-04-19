@@ -1,0 +1,42 @@
+model:
+  seed: 42
+  encoder_dim: 1024
+  routing_dim: 4
+  select_k: 5
+  top_k: 2
+  expert_dim: 128
+  num_classes: 2
+
+train:
+  model_name: "DSD_ASV019"
+  layer_select_model_name: "LS_ASV019"
+  nb_samp: 64600
+  weight_decay: 0.0001
+  batch_size: 128
+  lr: 0.0001
+  num_epochs: 10
+  device: "cuda"
+  nb_worker: 4
+  patience: 5
+  warmup_epochs: 3
+  consistency_warmup: 3
+  router_aug_prob: 0.7
+  datasets: ["Asvspoof2019_LA"]
+
+loss:
+  lambda_ce: 1.0
+  lambda_contrastive: 0.3
+  lambda_consistency: 0.3
+  lambda_limp: 0.3
+  lambda_unknown: 0.2
+  lambda_entropy: 0.1
+
+paths:
+  aasist_config_path: "./config/AASIST.conf"
+  save_path: "./checkpoints"
+  log_path: "./logs"
+  wav2vec_path: "./pretrained_models/wav2vec2-xls-r-300m"
+  onnx_path: "./onnx_models/xlsr_base_fp16.onnx"
+
+meta:
+  description: "Layer-Selection + DSD"

@@ -1,0 +1,28 @@
+# 音訊處理
+librosa==0.11.0
+soundfile==0.12.1
+parselmouth==1.1.1
+
+# 數據處理
+pandas==2.2.3
+numpy==1.26.4        # 建議不要超過目前 torch 實測穩定版本
+h5py==3.13.0
+joblib==1.4.2
+tqdm==4.67.1
+six==1.17.0
+
+# 繪圖
+matplotlib==3.10.1
+seaborn==0.13.2
+
+# ML
+scikit-learn==1.6.1
+scikit-image==0.22.0   # 改為實際的圖像處理套件
+
+# 模型與特徵處理
+transformers==4.51.1
+asteroid_filterbanks==0.4.0
+
+# ONNX 模型與推理
+onnx==1.14.1
+onnxruntime==1.16.3

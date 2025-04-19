@@ -1,15 +1,15 @@
+import numpy as np
+from tqdm import tqdm
+import json
+import os
+import torch
+import argparse
 from data.dataloader import RawAudio
 from torch.utils.data import DataLoader
-import torch
-import os
-from tqdm import tqdm
-import argparse
 from utils.eval_metrics import compute_eer
 from torch.nn.functional import softmax
-import numpy as np
-from models.classifier.ASSIST import AasistEncoder
-import json
-from train_main_baseline import DownStreamLinearClassifier
+from src.models.ASSIST import AasistEncoder
+from src.train.train_main_baseline import DownStreamLinearClassifier
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.manifold import TSNE
@@ -34,6 +34,7 @@ def init():
     parser.add_argument('--batch_size', type=int, default=32, help="Batch size for inference")  # 新增 batch_size 參數
     parser.add_argument("--gpu", type=str, help="GPU index", default="2")
     parser.add_argument("--aasist_config_path", type=str, default='./config/AASIST.conf', help="Path to the AASIST model config")
+    parser.add_argument("--log_path", type=str, default='./log', help="Path to the log")
     args = parser.parse_args()
     args.cuda = torch.cuda.is_available()
     args.device = torch.device("cuda" if args.cuda else "cpu")
@@ -165,5 +166,5 @@ def test_on_desginated_datasets(task, model_path, save_path):
 if __name__ == "__main__":
     args = init()
     model_path = os.path.join(args.model_folder, args.model_name, 'best_model.pth')
-    save_path = os.path.join(args.model_folder, args.model_name)
+    save_path = os.path.join(args.log_path, args.model_name)
     test_on_desginated_datasets(args.task, model_path, save_path)

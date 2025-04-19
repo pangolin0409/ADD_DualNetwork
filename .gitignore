@@ -1,10 +1,10 @@
 /__pycache__
 /pretrained_models
+/onnx_models
 /*/__pycache__
 /*/*/__pycache__
 /DAC/
 /tsne_plots/
 /test/
 /checkpoints/
-/DSD/
 /images/

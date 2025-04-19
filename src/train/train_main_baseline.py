@@ -7,14 +7,10 @@ from tqdm import trange, tqdm
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR, StepLR, SequentialLR
-from models.classifier.ASSIST import AasistEncoder
-from models.Detector import Detector, MemoryBank, UnknownMemoryBank, ContrastiveLoss
-from load_datasets import load_datasets
-from config import init
+from src.models.ASSIST import AasistEncoder
+from src.data.load_datasets import load_datasets
+from config.config import init
 from utils.eval_metrics import compute_eer
-from torch.nn.functional import softmax
-from sklearn.cluster import KMeans
-from transformers import Wav2Vec2Model, Wav2Vec2FeatureExtractor
 
 # 把所有「隨機」都固定下來，讓每次訓練結果都一樣
 # 可重現實驗結果
@@ -110,6 +106,7 @@ def train_model(args):
     patience_counter = 0
 
     os.makedirs(os.path.join(args.save_path, args.model_name), exist_ok=True)
+    os.makedirs(os.path.join(args.log_path, args.model_name), exist_ok=True)
     best_model_path = os.path.join(args.save_path, args.model_name, "best_model.pth")
 
     for epoch in trange(args.num_epochs, desc="Epochs"):
@@ -151,7 +148,7 @@ def train_model(args):
         eer, val_loss = validate(model, val_loader, device, args)
         print(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}")
 
-        with open(os.path.join(args.save_path, args.model_name, "log.txt"), "a") as f:
+        with open(os.path.join(args.log_path, args.model_name, "log.txt"), "a") as f:
             f.write(f"[Epoch {epoch}] Train Loss: {avg_loss:.4f}, Train Acc: {train_acc:.4f}\n")
             f.write(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.5f}\n")
             f.write(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}\n")
