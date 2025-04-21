@@ -16,7 +16,7 @@ from src.models.Detector import Detector, MemoryBank, UnknownMemoryBank, Contras
 from src.data.load_datasets import load_datasets
 from src.utils.eval_metrics import compute_eer
 import wandb
-from src.utils.common_utils import get_git_branch
+from src.utils.common_utils import get_git_branch, send_discord
 
 # 把所有「隨機」都固定下來，讓每次訓練結果都一樣
 # 可重現實驗結果
@@ -88,6 +88,8 @@ def safe_release(*objs):
 # 訓練程式碼
 ###########################################
 def train_model(args):
+    webhook = args.discord_webhook
+
     wandb.init(
         project="audio-deepfake-detection",  #專案名稱
         name=f"{get_git_branch()}_{args.model_name}",  # 實驗名稱
@@ -254,6 +256,7 @@ def train_model(args):
                 best_eer = eer
                 best_model_path = os.path.join(args.save_path, args.model_name, "best_model.pth")
                 torch.save(model.state_dict(), best_model_path)
+                send_discord(f"✨ 新最佳模型：{args.model_name} | EER: {eer:.4f}", webhook)
                 print("=> Best model updated.")
 
             # Early stopping
@@ -263,6 +266,7 @@ def train_model(args):
             else:
                 patience_counter += 1
                 if patience_counter >= args.patience:
+                    send_discord(f"❌ 提前停止訓練：{args.model_name} | EPOCH: {epoch+1} | EER: {best_eer:.4f}", webhook)
                     print(f"Early stopping triggered after {epoch+1} epochs.")
                     break
 
@@ -282,7 +286,7 @@ def train_model(args):
             })
 
     finally:
-        safe_release(onnx_session)
+        safe_release(model, onnx_session)
         print("Cleaned up models and sessions.")
 
     print(f"Training done. Best EER = {best_eer:.4f}")

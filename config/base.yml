@@ -12,14 +12,14 @@ train:
   layer_select_model_name: "LS_ASV019"
   nb_samp: 64600
   weight_decay: 0.0001
-  batch_size: 32
+  batch_size: 128
   lr: 0.0001
-  num_epochs: 15
+  num_epochs: 20
   nb_worker: 4
-  patience: 5
-  warmup_epochs: 3
-  consistency_warmup: 3
-  router_aug_prob: 0.7
+  patience: 7
+  warmup_epochs: 5
+  consistency_warmup: 5
+  router_aug_prob: 0.5
   unknown_cluster_interval: 5
   datasets: ["Asvspoof2019_LA"]
 
@@ -29,11 +29,11 @@ inference:
 
 loss:
   lambda_ce: 1.0
-  lambda_contrastive: 0.3
-  lambda_consistency: 0.3
+  lambda_contrastive: 0.0
+  lambda_consistency: 0.0
   lambda_limp: 0.3
-  lambda_unknown: 0.2
-  lambda_entropy: 0.1
+  lambda_unknown: 0.0
+  lambda_entropy: 0.0
 
 paths:
   aasist_config_path: "./config/AASIST.conf"
@@ -46,3 +46,4 @@ paths:
 
 meta:
   description: "Layer-Selection + DSD"
+  discord_webhook: "https://discord.com/api/webhooks/1363816820028739756/_k6XM40W5f4OaRN0RJqWweG-AP-8rQbLIcZ_7x4YzK0ZjqPus7fSV9L_ul19B2pwrP9D"

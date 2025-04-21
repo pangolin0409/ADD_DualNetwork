@@ -21,6 +21,17 @@ from src.utils.visualize import (
     draw_expert_heatmap,
     draw_selector_distribution,
 )
+import torch.nn as nn
+
+def safe_release(*objs):
+    for obj in objs:
+        if obj is not None:
+            if isinstance(obj, nn.Module):
+                obj.cpu()
+            del obj
+    gc.collect()
+    torch.cuda.empty_cache()
+
 
 def load_model(model_class, model_path, device, **model_args):
     checkpoint = torch.load(model_path, map_location=device)
@@ -100,12 +111,8 @@ def inference(args, model_path, save_path):
             **model_args)
 
         score_loader, label_loader, local_gating_loader, moe_feature_loader = inference_loop(args, model)
-    except Exception as e:
-        print(f"Error during inference: {e}")
-        raise e
     finally:
-        del model
-        gc.collect()
+        safe_release(model, onnx_session)
 
     scores = np.array(score_loader)
     labels = np.array(label_loader)
