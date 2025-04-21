@@ -6,7 +6,7 @@ from sklearn.manifold import TSNE
 from sklearn.metrics import roc_curve, auc
 from collections import Counter
 
-def draw_expert_usage(gating, gating_type, task, save_path):
+def draw_expert_usage(gating, task, save_path):
     gating_array = np.array(gating)  # shape: [N, num_experts]
     avg_usage = gating_array.mean(axis=0)
     std_usage = gating_array.std(axis=0)
@@ -15,11 +15,11 @@ def draw_expert_usage(gating, gating_type, task, save_path):
 
     plt.figure(figsize=(8, 4))
     plt.bar(x, avg_usage, yerr=std_usage, capsize=5)
-    plt.title(f"{gating_type} Expert Usage on {task}")
+    plt.title(f"Expert Usage on {task}")
     plt.xlabel("Expert ID")
     plt.ylabel("Avg Gating Score")
     plt.tight_layout()
-    plt.savefig(os.path.join(save_path, f"{gating_type}_expert_usage_{task}.png"))
+    plt.savefig(os.path.join(save_path, f"expert_usage_on_{task}.png"))
     plt.close()
 
 def draw_ft_dist(features, labels, task, save_path, label_names=None):
@@ -37,7 +37,7 @@ def draw_ft_dist(features, labels, task, save_path, label_names=None):
     plt.title(f"MoE Feature Distribution on {task}")
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(save_path, f"feature_distribution_{task}.png"))
+    plt.savefig(os.path.join(save_path, f"feature_distribution_on_{task}.png"))
     plt.close()
 
 def draw_roc_curve(scores, labels, task, save_path):
@@ -53,7 +53,7 @@ def draw_roc_curve(scores, labels, task, save_path):
     plt.legend(loc="lower right")
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(save_path, f"roc_curve_{task}.png"))
+    plt.savefig(os.path.join(save_path, f"roc_curve_on_{task}.png"))
     plt.close()
 
 def draw_confidence_histogram(scores, labels, task, save_path):
@@ -65,7 +65,7 @@ def draw_confidence_histogram(scores, labels, task, save_path):
     plt.ylabel('Frequency')
     plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(save_path, f"score_histogram_{task}.png"))
+    plt.savefig(os.path.join(save_path, f"score_histogram_on_{task}.png"))
     plt.close()
 
 def draw_score_kde(scores, labels, task, save_path):
@@ -77,7 +77,7 @@ def draw_score_kde(scores, labels, task, save_path):
     plt.ylabel('Density')
     plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(save_path, f"score_kde_{task}.png"))
+    plt.savefig(os.path.join(save_path, f"score_kde_on_{task}.png"))
     plt.close()
 
 def draw_expert_heatmap(routing_matrix, task, save_path, max_samples=100):
@@ -90,7 +90,7 @@ def draw_expert_heatmap(routing_matrix, task, save_path, max_samples=100):
     plt.xlabel("Expert ID")
     plt.ylabel("Sample Index")
     plt.tight_layout()
-    plt.savefig(os.path.join(save_path, f"routing_heatmap_{task}.png"))
+    plt.savefig(os.path.join(save_path, f"routing_heatmap_on_{task}.png"))
     plt.close()
 
 def draw_selector_distribution(topk_idx_list, labels, save_path, k, task, num_layers=24):
@@ -116,5 +116,5 @@ def draw_selector_distribution(topk_idx_list, labels, save_path, k, task, num_la
     plt.xlabel("Layer Index")
     plt.ylabel("Frequency")
     plt.tight_layout()
-    plt.savefig(os.path.join(save_path, "selector_layer_freq.png"))
+    plt.savefig(os.path.join(save_path, f"selector_layer_freq_on_{task}.png"))
     plt.close()

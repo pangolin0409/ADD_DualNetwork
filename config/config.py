@@ -32,6 +32,5 @@ def init():
     parser.add_argument("--experiment", type=str, default="moe_full")  # 加一個主流程選擇
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use for training")
     args = parser.parse_args()
-    print("[DEBUG] Final ARGS:", vars(args))
 
     return args

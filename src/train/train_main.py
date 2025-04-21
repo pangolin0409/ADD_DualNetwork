@@ -12,11 +12,11 @@ from torch.nn.functional import softmax
 from sklearn.cluster import KMeans
 from transformers import Wav2Vec2FeatureExtractor
 import onnxruntime as ort
-from src.models.Detector import Detector, MemoryBank, UnknownMemoryBank, ContrastiveLoss, LayerSelectorMoE, Classifier
+from src.models.Detector import Detector, MemoryBank, UnknownMemoryBank, ContrastiveLoss
 from src.data.load_datasets import load_datasets
 from src.utils.eval_metrics import compute_eer
 import wandb
-import subprocess
+from src.utils.common_utils import get_git_branch
 
 # 把所有「隨機」都固定下來，讓每次訓練結果都一樣
 # 可重現實驗結果
@@ -26,14 +26,6 @@ def set_seed(seed: int):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
-def get_git_branch():
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"]
-        ).decode("utf-8").strip()
-    except:
-        return "unknown-branch"
 
 # --- Dual-space pseudo label: 根據 cosine similarity 將 feature 與 prototype 進行比對 ---
 def compute_pseudo_label(features, prototypes, mode='hard'):
@@ -110,27 +102,14 @@ def train_model(args):
     try:
         # 初始化模型架構
         onnx_session = ort.InferenceSession(args.onnx_path, providers=["CUDAExecutionProvider"]) 
-        selector = LayerSelectorMoE(topk=args.select_k, processor=processor, onnx_session=onnx_session).to(device)
-        classifier = Classifier(input_dim=args.expert_dim, num_classes=args.num_classes).to(device)
-
-        # 載入已訓練的 selector + classifier
-        checkpoint = torch.load(os.path.join(args.save_path, args.layer_select_model_name, "best_model.pth"), map_location=device)
-        # TODO 乾脆存pt檔，這樣我第二階段訓練是不需要載入 ONNX
-        selector.load_state_dict(checkpoint['selector'])
-        classifier.load_state_dict(checkpoint['classifier'])
-
-        selector.eval()
-        # 凍結 selector，不再訓練
-        for param in selector.parameters():
-            param.requires_grad = False
-        
         model = Detector(encoder_dim=args.encoder_dim, expert_dim=args.expert_dim, 
-        num_experts=args.routing_dim, top_k=args.top_k, num_classes=args.num_classes, classifier=classifier).to(device)
+        top_k=args.top_k, num_classes=args.num_classes
+        , processor=processor, onnx_session=onnx_session).to(device)
 
         # 建立 Memory Bank 用來儲存 prototype（對比學習 anchor）
         # 這裡我們有 2 類: 0: bonafide, 1: spoof；並且用相同維度更新 feature 和 routing prototype
-        feature_mem = MemoryBank(feature_dim=args.expert_dim, num_classes=args.num_classes, momentum=0.99).to(device)
-        routing_mem = MemoryBank(feature_dim=args.routing_dim, num_classes=args.num_classes, momentum=0.99).to(device)
+        feature_mem = MemoryBank(feature_dim=args.encoder_dim, num_classes=args.num_classes, momentum=0.99).to(device)
+        routing_mem = MemoryBank(feature_dim=24, num_classes=args.num_classes, momentum=0.99).to(device)
         unknown_mem = UnknownMemoryBank(feature_dim=args.expert_dim, num_clusters=3).to(device)
         
         # 建立 Contrastive Loss（NT-Xent Loss）
@@ -166,7 +145,6 @@ def train_model(args):
             total_inconsistent = 0
             for batch_idx, (wave, label) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
                 label = label.to(device)
-                # wav2vec_fts = wav2vec_fts.to(device)
                 wave = wave.to(device)
                 optimizer.zero_grad()
                 # forward pass，這裡我們根據一定機率啟用 router augmentation
@@ -174,9 +152,7 @@ def train_model(args):
                 router_aug_flag = (random.random() < args.router_aug_prob)
                 # spoof 樣本才做 mask
                 aug_mask = (label == 1)
-                projected, scores, topk_idx, selected_layers = selector(wave)
-                print(f" Selected_layers: {selected_layers.shape}")
-                logits, routing, moe_output, fused_output = model(selected_layers=selected_layers, router_aug=router_aug_flag, aug_mask=aug_mask)
+                logits, routing, fused_output = model(wave=wave, router_aug=router_aug_flag, aug_mask=aug_mask)
                 
                 # 初始化 prototype（只執行一次）
                 if epoch == 0 and batch_idx == 0:
@@ -195,8 +171,8 @@ def train_model(args):
                 spoof_prob = F.softmax(logits, dim=1)[:, 1]
 
                 # MoE 正則化：load balance 與 limp loss
-                loss_limp = model.moe.compute_limp_loss(routing)
-                loss_load = model.moe.compute_load_balance_loss(routing)
+                loss_limp = model.compute_limp_loss(routing)
+                loss_load = model.compute_load_balance_loss(routing)
                 # loss_entropy = model.moe.compute_entropy_loss(routing)
                 
                 # Dual-space pseudo label：利用 moe_output (feature space) 與 routing (routing space)
@@ -262,7 +238,7 @@ def train_model(args):
             print(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.5f}")
             
             # 驗證
-            eer, val_loss = validate(model, selector, val_loader, device, args, unknown_mem)
+            eer, val_loss = validate(model, val_loader, device, args, unknown_mem)
             print(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}")
 
             with open(os.path.join(args.log_path, args.model_name, "log.txt"), "a") as f:
@@ -293,9 +269,9 @@ def train_model(args):
             wandb.log({
                 "EER": eer,
                 "accuracy": train_acc,
-                "epoch_loss": avg_loss,
-                "epoch_val_loss": val_loss,
-                "loss/total": total_loss.item(),
+                "loss/total": float(total_loss),
+                "epoch_loss": float(avg_loss),
+                "epoch_val_loss": float(val_loss),
                 "loss/ce": loss_ce.item(),
                 "loss/contrastive": loss_contrastive.item(),
                 "loss/consistency": loss_consistency.item(),
@@ -304,8 +280,9 @@ def train_model(args):
                 "loss/pushaway": loss_pushaway.item(),
                 "loss/unknown_cluster": epoch_inconsistency_ratio,
             })
+
     finally:
-        safe_release(selector, classifier, onnx_session)
+        safe_release(onnx_session)
         print("Cleaned up models and sessions.")
 
     print(f"Training done. Best EER = {best_eer:.4f}")
@@ -313,7 +290,7 @@ def train_model(args):
 ###########################################
 # 驗證函數（包含 EER 計算）
 ###########################################
-def validate(model, selector, val_loader, device, args, unknown_mem):
+def validate(model, val_loader, device, args, unknown_mem):
     model.eval()
     total_loss = 0.0
     total_samples = 0
@@ -324,10 +301,8 @@ def validate(model, selector, val_loader, device, args, unknown_mem):
     with torch.no_grad():
         for (wave, label) in tqdm(val_loader, desc="Validation"):
             label = label.to(device)
-            # wav2vec_fts = wav2vec_fts.to(device)
             wave = wave.to(device)
-            projected, scores, topk_idx, selected_layers = selector(wave)
-            logits, routing, moe_output, fused_output = model(selected_layers=selected_layers, router_aug=False)
+            logits, routing, fused_output = model(wave=wave)
             loss = ce_loss_fn(logits, label)
             total_loss += loss.item() * label.size(0)
             total_samples += label.size(0)
@@ -343,7 +318,7 @@ def validate(model, selector, val_loader, device, args, unknown_mem):
             sim_max, _ = torch.max(sim, dim=1)         # (B,)
 
             # 調整 spoof probability（加權上升）
-            lambda_adj = 0.2  # ⚠️ 可調超參
+            lambda_adj = 0.2 
             scores = torch.clamp(p_spoof + lambda_adj * sim_max, 0, 1)
             
             score_list.append(scores)
@@ -356,18 +331,14 @@ def validate(model, selector, val_loader, device, args, unknown_mem):
     eer, frr, far, threshold = compute_eer(scores[labels == 1], scores[labels == 0])
     return eer, avg_loss
 
-def train_main(args):
-    """給 main.py 用的入口點"""
-    train_model(args)
-
-def main():
-    from config.config import init
-    args = init()
+def main(args):
     train_model(args)
 
 ###########################################
 # 主程式入口
 ###########################################
 if __name__ == "__main__":
+    from config.config import init
+    args = init()
     # 這裡假設 init() 會返回一個包含所有參數的 args 物件
     main()

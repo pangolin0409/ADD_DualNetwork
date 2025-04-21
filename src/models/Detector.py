@@ -85,6 +85,7 @@ class TopkRouter(nn.Module):
         self.aug_mode = aug_mode
         self.aug_prob = aug_prob
         self.noise_scale = noise_scale
+        self.num_experts = num_experts
 
     def forward(self, x, augment=False, aug_mask=None):
         """
@@ -266,97 +267,91 @@ class Classifier(nn.Module):
 # Detector 模組：結合 SparseMoE 與 Classifier
 ###########################################
 class Detector(nn.Module):
-    def __init__(self, encoder_dim=1024, expert_dim=128, num_experts=4, top_k=2, num_classes=2, dropout=0.1, classifier=None):
-        super(Detector, self).__init__()
-        self.moe = SparseMoE(in_dim=encoder_dim, out_dim=expert_dim, num_experts=num_experts, top_k=top_k)
-        self.classifier = classifier
+    def __init__(
+        self, 
+        encoder_dim=1024, 
+        num_experts=24, 
+        expert_dim=128,
+        top_k=4, 
+        num_classes=2, 
+        processor=None, 
+        onnx_session=None
+    ):
+        super().__init__()
+        self.router = TopkRouter(input_dim=encoder_dim, num_experts=num_experts)
+        self.classifier = Classifier(input_dim=encoder_dim, num_classes=num_classes)
         self.pre_norm = nn.LayerNorm(encoder_dim)
-        self.post_norm = nn.LayerNorm(expert_dim)
-    def forward(self, selected_layers=None, router_aug=False, aug_mask=None):
-        # selected_layers: [B, K, T, D]  ← LayerSelectorMoE 的輸出
-        B, K, T, D = selected_layers.shape
-        max_pooled, _ = selected_layers.max(dim=2)
-        max_pooled = max_pooled.reshape(B * K, D)
-        max_pooled = self.pre_norm(max_pooled)
-        moe_output, routing = self.moe(max_pooled, router_aug, aug_mask)  # [B*K, expert_dim]
-        routing = routing.view(B, K, -1)  # [B, K, num_experts]
-        routing = routing.mean(dim=1) # [B, num_experts]
-        moe_output = moe_output.view(B, K, -1)  # [B, K, expert_dim]
-        # TODO  融合方式：你可以選 mean / sum / weighted
-        fused = moe_output.sum(dim=1) / math.sqrt(K) # [B, expert_dim]
-        fused = self.post_norm(fused) # [B, expert_dim]
-        logits = self.classifier(fused)  # (batch, num_classes)
-        return logits, routing, moe_output, fused
-
-###########################################
-# Layer Selector 模組：使用 ONNX 進行特徵擷取
-###########################################
-class LayerSelectorMoE(nn.Module):
-    def __init__(self, topk=3, processor=None, onnx_session=None, hidden_dim=1024, proj_dim=128):
-        super(LayerSelectorMoE, self).__init__()
         self.processor = processor
         self.session = onnx_session
-        self.topk = topk
-        self.score_fn = nn.Linear(hidden_dim, 1)
-
-        # New projection module
-        self.pool_proj = nn.Sequential(
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, proj_dim)
-        )
-
-    def forward(self, wave=None):
-        wav2vec_ft = self.extract_features_from_onnx(wave)  # [B, 25, T, 1024]
-        layer_outputs = wav2vec_ft[:, 1:]  # [B, 24, T, D]
+        self.num_experts = num_experts
+    def forward(self, wave, router_aug=False, aug_mask=None):
+        """
+        wave: list of waveform tensors (batch of audio signals)
+        """
+        # → [B, 25, T, D] 全部層的 hidden state
+        all_hidden_states = self.extract_features_from_onnx(wave)  
+        layer_outputs = all_hidden_states[:, 1:]  # [B, 24, T, D] → 移除 conv 前 embedding 層
         B, L, T, D = layer_outputs.shape
 
-        pooled = layer_outputs.mean(dim=2)  # [B, L, D]
-        #　可以試試看　max pooling
-        # pooled = layer_outputs.max(dim=2)[0]  # [B, L, D]
-        scores = self.score_fn(pooled).squeeze(-1)  # [B, L]
-        probs = F.softmax(scores, dim=1)  # [B, L]
+        # 每層 max pooling → [B, 24, D]
+        pooled_layers = layer_outputs.max(dim=2).values  # torch.max return (value, index)
 
-        topk_vals, topk_idx = torch.topk(probs, self.topk, dim=1)  # [B, K]
-        idx_expanded = topk_idx.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, T, D)  # [B, K, T, D]
-        selected_layers = torch.gather(layer_outputs, dim=1, index=idx_expanded)  # [B, K, T, D]
-
-        weights = topk_vals.unsqueeze(-1).unsqueeze(-1)  # [B, K, 1, 1]
-        weighted = (selected_layers * weights).sum(dim=1)  # [B, T, D]
-
-        # 🔥 MaxPool over time (dim=1)
-        pooled_weighted, _ = torch.max(weighted, dim=1)  # [B, D]
-
-        # 🔥 LayerNorm + Linear projection to 128
-        projected = self.pool_proj(pooled_weighted)  # [B, 128]
-
-        return projected, scores, topk_idx, selected_layers.detach()
+        # 用最後一層（第 24 層）作為 routing 的 input
+        routing_input = pooled_layers[:, -1, :]  # [B, D]
+        routing_weights = self.router(routing_input, augment=router_aug, aug_mask=aug_mask)  # [B, 24]
+        # 加權融合所有 pooled features
+        fused = torch.sum(routing_weights.unsqueeze(-1) * pooled_layers, dim=1)  # [B, D]
+        fused = self.pre_norm(fused)
+        logits = self.classifier(fused)  # [B, num_classes]
+        return logits, routing_weights, fused
 
     def extract_features_from_onnx(self, waveform):
-        # 使用 processor 處理輸入
-        inputs = self.processor(waveform, sampling_rate=16000, return_tensors="np")
-
-        # 正確處理 input shape: 保證是 (batch, seq_len)
+        """
+        使用 ONNX 將 raw waveform 轉成 hidden states (25 layers)
+        """
+        inputs = self.processor(
+            waveform, sampling_rate=16000, return_tensors="np"
+        )
         input_values = inputs["input_values"]
+        attention_mask = inputs["attention_mask"]
+
+        # squeeze 處理 (batch, 1, seq_len) → (batch, seq_len)
         if input_values.ndim == 3 and input_values.shape[0] == 1:
             input_values = np.squeeze(input_values, axis=0)
-
-        attention_mask = inputs["attention_mask"]
         if attention_mask.ndim == 3 and attention_mask.shape[0] == 1:
             attention_mask = np.squeeze(attention_mask, axis=0)
 
         input_values = input_values.astype(np.float16)
-        # attention_mask 必須是 int64
         attention_mask = attention_mask.astype(np.int64)
 
-        # 使用 ONNX Session 推理
+        # ONNX forward
         outputs = self.session.run(None, {
             "input_values": input_values,
             "attention_mask": attention_mask
         })
 
-        # 取得所有 hidden states → shape: (25, batch, T, 1024)
-        all_hidden_states = np.array(outputs[1])  # (25, batch, T, 1024)
-        all_hidden_states = np.transpose(all_hidden_states, (1, 0, 2, 3))  # (batch, 25, T, 1024)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        layer_outputs = torch.tensor(all_hidden_states, dtype=torch.float32).to(device)
-        return layer_outputs  # (batch, 25, T, 1024)
+        # (25, B, T, D) → (B, 25, T, D)
+        all_hidden_states = np.array(outputs[1])
+        all_hidden_states = np.transpose(all_hidden_states, (1, 0, 2, 3))
+
+        return torch.tensor(all_hidden_states, dtype=torch.float32).to(
+            torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        )
+    def compute_limp_loss(self, routing_weights):
+        # 計算單個樣本 routing variance
+        mean_val = torch.mean(routing_weights, dim=1, keepdim=True)
+        var = torch.mean((routing_weights - mean_val) ** 2, dim=1)
+        limp_loss = -torch.mean(var)  # maximize variance -> minimize negative variance
+        return limp_loss
+
+    def compute_load_balance_loss(self, routing_weights):
+        # 計算 batch 中每個 expert 的平均 routing weight
+        batch_mean = torch.mean(routing_weights, dim=0)  # (num_experts,)
+        ideal = 1.0 / self.num_experts
+        load_loss = torch.mean((batch_mean - ideal) ** 2)
+        return load_loss
+    
+    def compute_entropy_loss(self, routing_weights):
+        # routing_weights: [batch, num_experts]
+        ent = - (routing_weights * torch.log(routing_weights + 1e-6)).sum(dim=1).mean()
+        return ent

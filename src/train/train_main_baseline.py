@@ -204,17 +204,13 @@ def validate(model, val_loader, device, args):
     eer, frr, far, threshold = compute_eer(scores[labels == 1], scores[labels == 0])
     return eer, avg_loss
 
-def train_main(args):
-    """給 main.py 用的入口點"""
-    train_model(args)
-
-def main():
-    from config.config import init
-    args = init()
+def main(args):
     train_model(args)
 
 ###########################################
 # 主程式入口
 ###########################################
 if __name__ == "__main__":
-    main()
+    from config.config import init
+    args = init()
+    main(args)

@@ -12,15 +12,20 @@ train:
   layer_select_model_name: "LS_ASV019"
   nb_samp: 64600
   weight_decay: 0.0001
-  batch_size: 128
+  batch_size: 32
   lr: 0.0001
-  num_epochs: 10
+  num_epochs: 15
   nb_worker: 4
   patience: 5
   warmup_epochs: 3
   consistency_warmup: 3
   router_aug_prob: 0.7
+  unknown_cluster_interval: 5
   datasets: ["Asvspoof2019_LA"]
+
+inference:
+  task: "in_the_wild"
+  upload_plots: true
 
 loss:
   lambda_ce: 1.0
@@ -33,7 +38,9 @@ loss:
 paths:
   aasist_config_path: "./config/AASIST.conf"
   save_path: "./checkpoints"
+  model_folder: "./checkpoints"
   log_path: "./logs"
+  plot_path: "./plot"
   wav2vec_path: "./pretrained_models/wav2vec2-xls-r-300m"
   onnx_path: "./onnx_models/xlsr_base_fp16.onnx"
 
