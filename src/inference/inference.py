@@ -44,7 +44,7 @@ def load_datasets(task, nb_samp, batch_size, nb_worker):
     # 加載數據集 (改為批量推理)
     print(f"Loading dataset: {task}")
     test_set = RawAudio(
-        path_to_database=f'F:/datasets/{task}',
+        path_to_database=f'E:/datasets/{task}',
         meta_csv='meta.csv',
         return_label=True,
         nb_samp= nb_samp,
@@ -100,6 +100,7 @@ def inference(args, model_path, save_path):
             'expert_dim': args.expert_dim,
             'top_k': args.top_k,
             'num_classes': args.num_classes,
+            'router_temperature': args.router_temperature,
             'processor': processor,
             'onnx_session': onnx_session,
         }

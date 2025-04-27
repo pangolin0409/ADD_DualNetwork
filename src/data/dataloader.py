@@ -5,7 +5,7 @@ from torch.utils import data
 import pandas as pd
 
 class RawAudio(data.Dataset):
-    def __init__(self, path_to_database, meta_csv, nb_samp = 0, cut = True, return_label = True, norm_scale = True, part='train', wav2vec_path_prefix=None):
+    def __init__(self, path_to_database, meta_csv, nb_samp = 0, cut = True, return_label = True, norm_scale = True, part='train'):
         super(RawAudio, self).__init__()
         self.nb_samp = nb_samp
         self.path_to_audio = path_to_database

@@ -66,7 +66,7 @@ class ContrastiveLoss(nn.Module):
 ###########################################
 class TopkRouter(nn.Module):
     def __init__(self, input_dim, num_experts, hidden_dim=128, 
-        aug_mode='interpolation', aug_prob=0.5, noise_scale=0.05):
+        aug_mode='interpolation', aug_prob=0.5, noise_scale=0.05, router_temperature=2.0):
         """
         Args:
             input_dim (int): 輸入特徵維度。
@@ -86,6 +86,7 @@ class TopkRouter(nn.Module):
         self.aug_prob = aug_prob
         self.noise_scale = noise_scale
         self.num_experts = num_experts
+        self.router_temperature = router_temperature
 
     def forward(self, x, augment=False, aug_mask=None):
         """
@@ -94,9 +95,7 @@ class TopkRouter(nn.Module):
         """
         out = self.dropout(self.relu(self.fc1(x)))  # (batch, hidden_dim)
         logits = self.fc2(out)
-        routing = self.softmax(logits)  # (batch, num_experts)
-        if augment and self.aug_mode != 'none' and aug_mask is not None:
-            routing = self.augment_routing(routing, aug_mask, mode=self.aug_mode)
+        routing = self.softmax(logits/self.router_temperature)  # (batch, num_experts)
         return routing
 
     def augment_routing(self, routing, mask, mode='interpolation'):
@@ -247,6 +246,28 @@ class SparseMoE(nn.Module):
             weighted_out = expert_out * gating_subset.unsqueeze(-1)
             fused[sample_mask] += weighted_out
         return fused, routing_weights  # 返回 fused output 與原 routing_weights
+
+class MultiHeadLayerAttention(nn.Module):
+    def __init__(self, feature_dim, num_heads=4):
+        super().__init__()
+        self.num_heads = num_heads
+        self.attention = nn.Linear(feature_dim, num_heads)
+
+    def forward(self, x):
+        attn_logits = self.attention(x)  # (B, L, num_heads)
+        attn_logits = attn_logits.permute(0, 2, 1)  # (B, num_heads, L)
+        attn_weights = torch.softmax(attn_logits, dim=-1)  # (B, num_heads, L)
+
+        x_expanded = x.unsqueeze(1).expand(-1, self.num_heads, -1, -1)  # (B, num_heads, L, D)
+
+        # attention 加權
+        out = torch.matmul(attn_weights.unsqueeze(-2), x_expanded).squeeze(-2)  # (B, num_heads, D)
+
+        # head 之間做平均 (or sum)，得到 (B, D)
+        out = out.mean(dim=1)  # (B, D)
+
+        return out
+
 ###########################################
 # Classifier 模組
 ###########################################
@@ -273,12 +294,14 @@ class Detector(nn.Module):
         num_experts=24, 
         expert_dim=128,
         top_k=4, 
-        num_classes=2, 
+        num_classes=2,
+        router_temperature=2.0,
         processor=None, 
         onnx_session=None
     ):
         super().__init__()
-        self.router = TopkRouter(input_dim=encoder_dim, num_experts=num_experts)
+        self.router = TopkRouter(input_dim=encoder_dim, num_experts=num_experts, router_temperature=router_temperature)
+        self.layer_attention = MultiHeadLayerAttention(feature_dim=encoder_dim, num_heads=4)
         self.classifier = Classifier(input_dim=encoder_dim, num_classes=num_classes)
         self.pre_norm = nn.LayerNorm(encoder_dim)
         self.processor = processor
@@ -294,10 +317,10 @@ class Detector(nn.Module):
         B, L, T, D = layer_outputs.shape
 
         # 每層 max pooling → [B, 24, D]
-        pooled_layers = layer_outputs.max(dim=2).values  # torch.max return (value, index)
+        pooled_layers = layer_outputs.mean(dim=2)  # [B, 24, D]
+        # 對各層的 pooled features 做 layer attention
+        routing_input = self.layer_attention(pooled_layers)  # [B, D]
 
-        # 用最後一層（第 24 層）作為 routing 的 input
-        routing_input = pooled_layers[:, -1, :]  # [B, D]
         routing_weights = self.router(routing_input, augment=router_aug, aug_mask=aug_mask)  # [B, 24]
         # 加權融合所有 pooled features
         fused = torch.sum(routing_weights.unsqueeze(-1) * pooled_layers, dim=1)  # [B, D]
@@ -338,6 +361,7 @@ class Detector(nn.Module):
             torch.device("cuda" if torch.cuda.is_available() else "cpu")
         )
     def compute_limp_loss(self, routing_weights):
+        # routing_weights: [batch, num_experts]
         # 計算單個樣本 routing variance
         mean_val = torch.mean(routing_weights, dim=1, keepdim=True)
         var = torch.mean((routing_weights - mean_val) ** 2, dim=1)
@@ -352,6 +376,20 @@ class Detector(nn.Module):
         return load_loss
     
     def compute_entropy_loss(self, routing_weights):
-        # routing_weights: [batch, num_experts]
         ent = - (routing_weights * torch.log(routing_weights + 1e-6)).sum(dim=1).mean()
         return ent
+    
+    def compute_router_supervised_loss(self, routing_weights, logits, labels):
+        preds = torch.argmax(logits, dim=1)  # [B]
+
+        # Step 2: classify correct / incorrect
+        correct_mask = (preds == labels).float()  # [B]
+        incorrect_mask = 1.0 - correct_mask        # [B]
+
+        # Step 3: compute routing entropy
+        entropy = - (routing_weights * torch.log(routing_weights + 1e-6)).sum(dim=1)  # [B]
+
+        # Step 4: apply only on incorrect samples
+        loss_router_supervised = (incorrect_mask * entropy).mean()
+
+        return loss_router_supervised

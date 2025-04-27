@@ -10,15 +10,8 @@ def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fa
     # 初始化 datasets 和 dataloaders
     training_sets = {}
     for dataset_name in dataset_names:
-        match dataset_name:
-            case 'CodecFake' | 'Asvspoof2019_LA':
-                wav2vec_path_prefix = f'F:/datasets/{dataset_name}'
-            case _:
-                wav2vec_path_prefix = f'F:/datasets/{dataset_name}'
-
         training_sets[dataset_name] = RawAudio(
-            path_to_database=f'F:/datasets/{dataset_name}',
-            wav2vec_path_prefix = wav2vec_path_prefix,
+            path_to_database=f'E:/datasets/{dataset_name}',
             meta_csv='meta.csv',
             return_label=True,
             nb_samp=sample_rate,
@@ -29,14 +22,14 @@ def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fa
     for name, training_set in training_sets.items():
         # 如果是測試模式，則不進行下採樣
         if test:
-            real_indices, spoof_indices = downsample_test_data(meta_path=f'F:/datasets/{name}/train/meta.csv', dataset_name=name)
+            real_indices, spoof_indices = downsample_test_data(meta_path=f'E:/datasets/{name}/train/meta.csv', dataset_name=name)
         else:
             # 如果是下採樣模式，則進行下採樣
             if is_downsample:
                 print(f"Processing dataset hhh: {name}")
-                real_indices, spoof_indices = downsample_data(meta_path=f'F:/datasets/{name}/train/meta.csv', dataset_name=name, target_fake_ratio=target_fake_ratio)
+                real_indices, spoof_indices = downsample_data(meta_path=f'E:/datasets/{name}/train/meta.csv', dataset_name=name, target_fake_ratio=target_fake_ratio)
             else:
-                meta = pd.read_csv(f'F:/datasets/{name}/train/meta.csv')
+                meta = pd.read_csv(f'E:/datasets/{name}/train/meta.csv')
                 real_indices = meta[meta['label'] == 'bonafide'].index.tolist()
                 spoof_indices = meta[meta['label'] == 'spoof'].index.tolist()
                 
@@ -53,15 +46,8 @@ def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fa
     # 初始化 datasets 和 dataloaders
     validation_sets = {}
     for dataset_name in dataset_names:
-        match dataset_name:
-            case 'CodecFake' | 'Asvspoof2019_LA':
-                wav2vec_path_prefix = f'E:/datasets/{dataset_name}'
-            case _:
-                wav2vec_path_prefix = f'D:/datasets/{dataset_name}'
-
         validation_sets[dataset_name] = RawAudio(
-            path_to_database=f'F:/datasets/{dataset_name}',
-            wav2vec_path_prefix = wav2vec_path_prefix,
+            path_to_database=f'E:/datasets/{dataset_name}',
             meta_csv='meta.csv',
             return_label=True,
             nb_samp=sample_rate,

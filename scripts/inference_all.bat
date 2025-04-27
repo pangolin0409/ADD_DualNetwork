@@ -1,6 +1,6 @@
 @echo off
-call conda activate gordon
-set MODEL=NO_DSD_ASV019
+call conda activate audio
+set MODEL=LS_RS_ASV2019
 
 python main.py --experiment train --model_name "%MODEL%"
 

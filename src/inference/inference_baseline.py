@@ -105,7 +105,7 @@ def test_on_desginated_datasets(task, model_path, save_path):
     print(f"Loading dataset: {task}")
     match task:
         case 'ASVspoof2021_DF':
-            path_to_wav2vec_ft = f'D:/datasets/{task}'
+            path_to_wav2vec_ft = f'E:/datasets/{task}'
         case _:
             path_to_wav2vec_ft = f'E:/datasets/{task}'
     test_set = RawAudio(

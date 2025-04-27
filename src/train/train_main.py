@@ -99,23 +99,14 @@ def train_model(args):
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     processor = Wav2Vec2FeatureExtractor.from_pretrained(args.wav2vec_path)
-    ort.preload_dlls(cuda=True, cudnn=True, msvc=True)
+    # ort.preload_dlls(cuda=True, cudnn=True, msvc=True)
 
     try:
         # 初始化模型架構
         onnx_session = ort.InferenceSession(args.onnx_path, providers=["CUDAExecutionProvider"]) 
         model = Detector(encoder_dim=args.encoder_dim, expert_dim=args.expert_dim, 
-        top_k=args.top_k, num_classes=args.num_classes
-        , processor=processor, onnx_session=onnx_session).to(device)
-
-        # 建立 Memory Bank 用來儲存 prototype（對比學習 anchor）
-        # 這裡我們有 2 類: 0: bonafide, 1: spoof；並且用相同維度更新 feature 和 routing prototype
-        feature_mem = MemoryBank(feature_dim=args.encoder_dim, num_classes=args.num_classes, momentum=0.99).to(device)
-        routing_mem = MemoryBank(feature_dim=24, num_classes=args.num_classes, momentum=0.99).to(device)
-        unknown_mem = UnknownMemoryBank(feature_dim=args.expert_dim, num_clusters=3).to(device)
-        
-        # 建立 Contrastive Loss（NT-Xent Loss）
-        contrastive_loss_fn = ContrastiveLoss(temperature=0.07)
+        top_k=args.top_k, num_classes=args.num_classes, router_temperature=args.router_temperature,
+        processor=processor, onnx_session=onnx_session).to(device)
 
         # Optimizer 與 Scheduler（此處沿用你原本的設定）
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -144,7 +135,6 @@ def train_model(args):
             total_loss = 0.0
             total_samples = 0
             correct = 0
-            total_inconsistent = 0
             for batch_idx, (wave, label) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
                 label = label.to(device)
                 wave = wave.to(device)
@@ -155,84 +145,34 @@ def train_model(args):
                 # spoof 樣本才做 mask
                 aug_mask = (label == 1)
                 logits, routing, fused_output = model(wave=wave, router_aug=router_aug_flag, aug_mask=aug_mask)
-                
-                # 初始化 prototype（只執行一次）
-                if epoch == 0 and batch_idx == 0:
-                    with torch.no_grad():
-                        for cls in [0, 1]:
-                            cls_mask = label == cls
-                            if cls_mask.any():
-                                avg_feat = fused_output[cls_mask].mean(dim=0)
-                                feature_mem.prototypes[cls] = F.normalize(avg_feat, dim=0)
-                                routing_mem.prototypes[cls] = F.normalize(routing[cls_mask].mean(dim=0), dim=0)
-
                 # CrossEntropy Loss (分類 loss)
                 loss_ce = ce_loss_fn(logits, label)
-
-                # 從 logits 計算 spoof probability (index 1 為 spoof)
-                spoof_prob = F.softmax(logits, dim=1)[:, 1]
 
                 # MoE 正則化：load balance 與 limp loss
                 loss_limp = model.compute_limp_loss(routing)
                 loss_load = model.compute_load_balance_loss(routing)
-                # loss_entropy = model.moe.compute_entropy_loss(routing)
-                
-                # Dual-space pseudo label：利用 moe_output (feature space) 與 routing (routing space)
-                # 這裡我們用 MemoryBank 中的 prototypes作為 anchor
-                pseudo_label_feat = compute_pseudo_label(fused_output, feature_mem.prototypes, mode='hard')
-                pseudo_label_rout = compute_pseudo_label(routing, routing_mem.prototypes, mode='hard')
+                loss_entropy = model.compute_entropy_loss(routing)
+                loss_router_supervised_loss = model.compute_router_supervised_loss(routing, logits, label)
 
-                # Consistency loss
-                if epoch >= args.consistency_warmup:
-                    loss_consistency = compute_consistency_loss(pseudo_label_feat, pseudo_label_rout, logits, soft=True)
-                    # 這些樣本是 known，我們希望它們遠離 unknown prototype
-                    known_mask = (pseudo_label_feat == pseudo_label_rout)
-                    known_feats = fused_output[known_mask]
-                    loss_pushaway = push_away_from_unknown(known_feats, unknown_mem.get())
-                else:
-                    loss_consistency = torch.tensor(0.0, device=device)
-                    loss_pushaway = torch.tensor(0.0, device=device)
-
-                # Contrastive loss（用 moe_output 來對比）
-                loss_contrastive = contrastive_loss_fn(fused_output, label)
-
-                # 組合總 loss（權重可根據 args 調整）
+                # 組合總 loss
                 total_batch_loss = (args.lambda_ce * loss_ce + 
-                                    args.lambda_contrastive * loss_contrastive + 
-                                    args.lambda_consistency * loss_consistency + 
-                                    args.lambda_limp * (loss_limp + loss_load) + 
-                                    args.lambda_unknown * loss_pushaway)
-                print(f'loss_ce: {loss_ce:.4f}, loss_contrastive: {loss_contrastive:.4f}, loss_consistency: {loss_consistency:.4f}, loss_limp: {loss_limp:.4f}, loss_load: {loss_load:.4f}, loss_pushaway: {loss_pushaway:.4f}')
+                                    args.lambda_limp * loss_limp +
+                                    args.lambda_load * loss_load +
+                                    args.lambda_entropy * loss_entropy+
+                                    args.lambda_router_supervised * loss_router_supervised_loss)
+                
+                print(f"loss_ce: {loss_ce.item():.4f}, loss_limp: {loss_limp.item():.4f}, loss_load: {loss_load.item():.4f}, loss_entropy: {loss_entropy.item():.4f}, loss_router_supervised: {loss_router_supervised_loss.item():.4f}")
+
                 total_batch_loss.backward()
                 optimizer.step()
-
-                # 更新 MemoryBank (prototype) for feature and routing spaces
-                with torch.no_grad():
-                    feature_mem.update(fused_output, label)
-                    routing_mem.update(routing, label)
 
                 total_loss += total_batch_loss.item() * label.size(0)
                 total_samples += label.size(0)
                 preds = torch.argmax(logits, dim=1)
                 correct += (preds == label).sum().item()
 
-                inconsistent = (pseudo_label_feat != pseudo_label_rout)  # (B,)
-                batch_inconsistent_count = inconsistent.sum().item()
-                total_inconsistent += batch_inconsistent_count
-
-            if epoch % args.unknown_cluster_interval == 0:
-                inconsistent_mask = (pseudo_label_feat != pseudo_label_rout)
-                if inconsistent_mask.sum() >= unknown_mem.get().size(0):
-                    cluster_input = fused_output[inconsistent_mask].detach().cpu().numpy()
-                    kmeans = KMeans(n_clusters=unknown_mem.get().size(0), random_state=42)
-                    kmeans.fit(cluster_input)
-                    centroids = torch.tensor(kmeans.cluster_centers_, dtype=torch.float32, device=device)
-                    unknown_mem.update_from_kmeans(centroids)
-
             avg_loss = total_loss / total_samples
             train_acc = correct / total_samples
-            epoch_inconsistency_ratio = total_inconsistent / total_samples
-            print(f"[Epoch {epoch}] Inconsistent Samples: {total_inconsistent}/{total_samples} ({epoch_inconsistency_ratio:.3f})")
 
             print(f"[Epoch {epoch}] Train Loss: {avg_loss:.4f}, Train Acc: {train_acc:.4f}")
             
@@ -240,14 +180,13 @@ def train_model(args):
             print(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.5f}")
             
             # 驗證
-            eer, val_loss = validate(model, val_loader, device, args, unknown_mem)
+            eer, val_loss = validate(model, val_loader, device, args)
             print(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}")
 
             with open(os.path.join(args.log_path, args.model_name, "log.txt"), "a") as f:
                 f.write(f"[Epoch {epoch}] Train Loss: {avg_loss:.4f}, Train Acc: {train_acc:.4f}\n")
                 f.write(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.5f}\n")
                 f.write(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}\n")
-                f.write(f"[Epoch {epoch}] Inconsistent Samples: {total_inconsistent}/{total_samples} ({epoch_inconsistency_ratio:.3f})\n")
 
             # Save checkpoint
             model_path = os.path.join(args.save_path, args.model_name, f"checkpt_last.pth")
@@ -277,12 +216,10 @@ def train_model(args):
                 "epoch_loss": float(avg_loss),
                 "epoch_val_loss": float(val_loss),
                 "loss/ce": loss_ce.item(),
-                "loss/contrastive": loss_contrastive.item(),
-                "loss/consistency": loss_consistency.item(),
                 "loss/loss_limp": loss_limp.item(),     
                 "loss/loss_load": loss_load.item(),
-                "loss/pushaway": loss_pushaway.item(),
-                "loss/unknown_cluster": epoch_inconsistency_ratio,
+                "loss/loss_entropy": loss_entropy.item(),
+                "loss/loss_router_supervised": loss_router_supervised_loss.item(),
             })
 
     finally:
@@ -294,7 +231,7 @@ def train_model(args):
 ###########################################
 # 驗證函數（包含 EER 計算）
 ###########################################
-def validate(model, val_loader, device, args, unknown_mem):
+def validate(model, val_loader, device, args):
     model.eval()
     total_loss = 0.0
     total_samples = 0
@@ -310,21 +247,8 @@ def validate(model, val_loader, device, args, unknown_mem):
             loss = ce_loss_fn(logits, label)
             total_loss += loss.item() * label.size(0)
             total_samples += label.size(0)
-            
-            p_spoof = F.softmax(logits, dim=1)[:, 1]  # spoof 機率
-            # === 新增信心修正 ===
-            unk_proto = unknown_mem.get()     # (K, D)
-            features = F.normalize(fused_output, dim=1)
-            unk_proto = F.normalize(unk_proto, dim=1)
+            scores = F.softmax(logits, dim=1)[:, 1]  # spoof 機率
 
-            # 計算每個樣本與 unknown prototype 的最大相似度
-            sim = torch.matmul(features, unk_proto.T)  # (B, K)
-            sim_max, _ = torch.max(sim, dim=1)         # (B,)
-
-            # 調整 spoof probability（加權上升）
-            lambda_adj = 0.2 
-            scores = torch.clamp(p_spoof + lambda_adj * sim_max, 0, 1)
-            
             score_list.append(scores)
             label_list.append(label)
     
