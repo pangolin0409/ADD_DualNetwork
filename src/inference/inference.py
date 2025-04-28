@@ -97,8 +97,7 @@ def inference(args, model_path, save_path):
         onnx_session = ort.InferenceSession(args.onnx_path, providers=["CUDAExecutionProvider"])
         model_args = {
             'encoder_dim': args.encoder_dim,
-            'expert_dim': args.expert_dim,
-            'top_k': args.top_k,
+            'num_experts': args.num_experts,
             'num_classes': args.num_classes,
             'router_temperature': args.router_temperature,
             'processor': processor,

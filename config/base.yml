@@ -1,7 +1,7 @@
 model:
   seed: 42
   encoder_dim: 1024
-  routing_dim: 4
+  num_experts: 24
   select_k: 5
   top_k: 2
   expert_dim: 128
@@ -33,7 +33,7 @@ loss:
   lambda_contrastive: 0.0
   lambda_consistency: 0.0
   lambda_limp: 0.3
-  lambda_load: 0.3
+  lambda_load: 1.0
   lambda_entropy: 0.1
   lambda_router_supervised: 0.1
   lambda_unknown: 0.0

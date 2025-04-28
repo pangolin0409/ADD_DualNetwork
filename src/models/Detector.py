@@ -65,73 +65,24 @@ class ContrastiveLoss(nn.Module):
 # Router 模組（包含 Data Augmentation）
 ###########################################
 class TopkRouter(nn.Module):
-    def __init__(self, input_dim, num_experts, hidden_dim=128, 
-        aug_mode='interpolation', aug_prob=0.5, noise_scale=0.05, router_temperature=2.0):
-        """
-        Args:
-            input_dim (int): 輸入特徵維度。
-            num_experts (int): 專家數量。
-            hidden_dim (int): 隱藏層維度。
-            aug_mode (str): 擴增模式，可選 'interpolation' 或 'extrapolation' 或 'none'
-            aug_prob (float): 每筆樣本進行 mixup 風格擴增的機率。
-            noise_scale (float): 加性 Gaussian Noise 的標準差。
-        """
+    def __init__(self, input_dim, num_experts, hidden_dim=128, router_temperature=2.0):
         super(TopkRouter, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.1)
         self.fc2 = nn.Linear(hidden_dim, num_experts)
-        self.softmax = nn.Softmax(dim=-1)
-        self.aug_mode = aug_mode
-        self.aug_prob = aug_prob
-        self.noise_scale = noise_scale
-        self.num_experts = num_experts
+        self.noise_linear = nn.Linear(input_dim, num_experts)
         self.router_temperature = router_temperature
+        self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, augment=False, aug_mask=None):
-        """
-        x: (batch, input_dim)
-        augment: 是否啟用 routing data augmentation。
-        """
+    def forward(self, x):
         out = self.dropout(self.relu(self.fc1(x)))  # (batch, hidden_dim)
-        logits = self.fc2(out)
-        routing = self.softmax(logits/self.router_temperature)  # (batch, num_experts)
+        logits = self.fc2(out)  # (batch, num_experts)
+        noise_scale = F.softplus(self.noise_linear(x))  # 保證是正值
+        noise = torch.randn_like(logits) * noise_scale
+        logits = logits + noise
+        routing = self.softmax(logits / self.router_temperature)
         return routing
-
-    def augment_routing(self, routing, mask, mode='interpolation'):
-        """
-        只對 routing vector 中 mask 為 True 的樣本進行增強。
-        mask: (batch,) bool tensor
-        """
-        device = routing.device
-        routing_aug = routing.clone()
-        indices = mask.nonzero(as_tuple=True)[0]
-
-        if len(indices) == 0:
-            return routing  # 沒有任何要增強的樣本
-
-        selected = routing[indices]
-
-        if mode == 'interpolation':
-            perm = torch.randperm(selected.size(0))
-            selected_perm = selected[perm]
-            lam = torch.rand(selected.size(0), 1, device=device)
-            augmented = lam * selected + (1 - lam) * selected_perm
-
-        elif mode == 'extrapolation':
-            batch_mean = selected.mean(dim=0, keepdim=True)
-            lam = torch.rand(selected.size(0), 1, device=device)
-            augmented = selected + lam * (selected - batch_mean)
-
-        else:
-            augmented = selected
-
-        noise = torch.randn_like(augmented) * self.noise_scale
-        augmented = augmented + noise
-        augmented = augmented / (augmented.sum(dim=-1, keepdim=True) + 1e-8)
-
-        routing_aug[indices] = augmented
-        return routing_aug
 
 class SparseMoE(nn.Module):
     def __init__(self, in_dim, out_dim, num_experts, top_k):
@@ -207,32 +158,53 @@ class Classifier(nn.Module):
 # Detector 模組：結合 SparseMoE 與 Classifier
 ###########################################
 class Detector(nn.Module):
-    def __init__(self, encoder_dim=1024, num_experts=24, expert_dim=128, top_k=4, num_classes=2, router_temperature=2.0, processor=None, onnx_session=None):
+    def __init__(self, encoder_dim=1024, num_experts=24, num_classes=2, router_temperature=2.0, processor=None, onnx_session=None):
         super().__init__()
-        self.router = TopkRouter(input_dim=encoder_dim, num_experts=num_experts, router_temperature=router_temperature)
-        self.classifier = Classifier(input_dim=encoder_dim, num_classes=num_classes)
-        self.gru = nn.GRU(encoder_dim, encoder_dim // 2, batch_first=True, bidirectional=True)
-        self.router_norm = nn.LayerNorm(encoder_dim)
-        self.pre_norm = nn.LayerNorm(encoder_dim)
+        self.num_experts = num_experts
         self.processor = processor
         self.session = onnx_session
-        self.num_experts = num_experts
+
+        # 一個大MLP處理所有層
+        self.mlp = nn.Sequential(
+            nn.Linear(encoder_dim, encoder_dim//2),
+            nn.ReLU(),
+            nn.Linear(encoder_dim//2, encoder_dim//2),
+        )
+
+        # Attention pooling也是一個大的Linear
+        self.attn_score = nn.Linear(encoder_dim//2, 1)
+
+        # Router
+        self.router = TopkRouter((encoder_dim*num_experts)//2, num_experts, router_temperature=router_temperature)
+
+        self.router_temperature = router_temperature
+        self.pre_norm = nn.LayerNorm(encoder_dim//2)
+        self.classifier = Classifier(input_dim=encoder_dim//2, num_classes=num_classes)
 
     def forward(self, wave, router_aug=False, aug_mask=None):
         all_hidden_states = self.extract_features_from_onnx(wave)  
         layer_outputs = all_hidden_states[:, 1:]  # [B, 24, T, D]
         B, L, T, D = layer_outputs.shape
 
-        pooled_layers = layer_outputs.mean(dim=2)  # [B, 24, D]
+        # -- MLP處理
+        x = layer_outputs.reshape(B * L, T, D)  # (B*24, T, D)
+        x = self.mlp(x)  # (B*24, T, expert_dim)
+        x = x.reshape(B, L, T, -1)  # (B, 24, T, expert_dim)
 
-        last_layer = layer_outputs[:, -1, :, :]  # [B, T, D]
-        gru_out, _ = self.gru(last_layer)  # [B, T, D]
-        routing_input = gru_out.mean(dim=1)  # [B, D]
-        routing_input = self.router_norm(routing_input)
-        routing_weights = self.router(routing_input, augment=router_aug, aug_mask=aug_mask)  # [B, 24]
-        fused = torch.sum(routing_weights.unsqueeze(-1) * pooled_layers, dim=1)  # [B, D]
+        # -- Attention Pooling
+        score = self.attn_score(x)  # (B, 24, T, 1)
+        weight = torch.softmax(score, dim=2)  # (B, 24, T, 1)
+        pooled = (x * weight).sum(dim=2)  # (B, 24, expert_dim)
+
+        # -- Router
+        router_input = pooled.reshape(B, -1)  # (B, 24*expert_dim)
+        routing_weights = self.router(router_input)  # (B, num_experts)
+
+        # -- Fusion
+        fused = (pooled * routing_weights.unsqueeze(-1)).sum(dim=1)  # (B, expert_dim)
         fused = self.pre_norm(fused)
         logits = self.classifier(fused)
+
         return logits, routing_weights, fused
 
     def extract_features_from_onnx(self, waveform):

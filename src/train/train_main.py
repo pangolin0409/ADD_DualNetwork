@@ -100,13 +100,13 @@ def train_model(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     processor = Wav2Vec2FeatureExtractor.from_pretrained(args.wav2vec_path)
     # ort.preload_dlls(cuda=True, cudnn=True, msvc=True)
-
+    model = None
+    onnx_session = None
     try:
         # 初始化模型架構
         onnx_session = ort.InferenceSession(args.onnx_path, providers=["CUDAExecutionProvider"]) 
-        model = Detector(encoder_dim=args.encoder_dim, expert_dim=args.expert_dim, 
-        top_k=args.top_k, num_classes=args.num_classes, router_temperature=args.router_temperature,
-        processor=processor, onnx_session=onnx_session).to(device)
+        model = Detector(encoder_dim=args.encoder_dim, num_experts=args.num_experts, num_classes=args.num_classes
+                         , router_temperature=args.router_temperature, processor=processor, onnx_session=onnx_session).to(device)
 
         # Optimizer 與 Scheduler（此處沿用你原本的設定）
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
