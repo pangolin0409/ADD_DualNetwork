@@ -133,66 +133,6 @@ class TopkRouter(nn.Module):
         routing_aug[indices] = augmented
         return routing_aug
 
-###########################################
-# MoE 模組：包含 top-k routing、Limp Loss 與 Load Balance Loss
-###########################################
-# class SparseMoE(nn.Module):
-#     def __init__(self, in_dim, out_dim, num_experts, top_k):
-#         super(SparseMoE, self).__init__()
-#         self.num_experts = num_experts
-#         self.top_k = top_k
-#         self.router = TopkRouter(in_dim, num_experts)
-#         self.experts = nn.ModuleList([
-#             nn.Sequential(
-#                 nn.Linear(in_dim, out_dim),
-#                 nn.ReLU(),
-#                 nn.Linear(out_dim, out_dim)
-#             ) for _ in range(num_experts)
-#         ])
-
-#     def forward(self, x, router_aug=False, aug_mask=None):
-#         # x: [B*K, D]
-#         B = x.size(0)
-#         routing_weights = self.router(x, augment=router_aug, aug_mask=aug_mask)  # [B, num_experts]
-#         topk_values, topk_indices = torch.topk(routing_weights, self.top_k, dim=1)  # [B, top_k]
-
-#         expert_outputs = torch.stack([expert(x) for expert in self.experts], dim=1)  # [B, num_experts, D]
-
-#         # 初始化 fused output
-#         out_dim = expert_outputs.size(-1)
-#         fused = torch.zeros(B, out_dim, device=x.device)
-
-#         for expert_idx in range(self.num_experts):
-#             # 找出哪些 sample 把 expert_idx 排進 top-k
-#             mask = (topk_indices == expert_idx)  # [B, top_k]
-#             sample_mask = mask.any(dim=1)  # [B]
-#             if sample_mask.sum() == 0:
-#                 continue
-#             expert_out = self.experts[expert_idx](x[sample_mask])  # [B', D]
-#             gating = routing_weights[sample_mask, expert_idx].unsqueeze(-1)  # [B', 1]
-#             fused[sample_mask] += expert_out * gating
-
-#         return fused, routing_weights
-
-#     def compute_limp_loss(self, routing_weights):
-#         # 計算單個樣本 routing variance
-#         mean_val = torch.mean(routing_weights, dim=1, keepdim=True)
-#         var = torch.mean((routing_weights - mean_val) ** 2, dim=1)
-#         limp_loss = -torch.mean(var)  # maximize variance -> minimize negative variance
-#         return limp_loss
-
-#     def compute_load_balance_loss(self, routing_weights):
-#         # 計算 batch 中每個 expert 的平均 routing weight
-#         batch_mean = torch.mean(routing_weights, dim=0)  # (num_experts,)
-#         ideal = 1.0 / self.num_experts
-#         load_loss = torch.mean((batch_mean - ideal) ** 2)
-#         return load_loss
-    
-#     def compute_entropy_loss(self, routing_weights):
-#         # routing_weights: [batch, num_experts]
-#         ent = - (routing_weights * torch.log(routing_weights + 1e-6)).sum(dim=1).mean()
-#         return ent
-
 class SparseMoE(nn.Module):
     def __init__(self, in_dim, out_dim, num_experts, top_k):
         """
@@ -247,27 +187,6 @@ class SparseMoE(nn.Module):
             fused[sample_mask] += weighted_out
         return fused, routing_weights  # 返回 fused output 與原 routing_weights
 
-class MultiHeadLayerAttention(nn.Module):
-    def __init__(self, feature_dim, num_heads=4):
-        super().__init__()
-        self.num_heads = num_heads
-        self.attention = nn.Linear(feature_dim, num_heads)
-
-    def forward(self, x):
-        attn_logits = self.attention(x)  # (B, L, num_heads)
-        attn_logits = attn_logits.permute(0, 2, 1)  # (B, num_heads, L)
-        attn_weights = torch.softmax(attn_logits, dim=-1)  # (B, num_heads, L)
-
-        x_expanded = x.unsqueeze(1).expand(-1, self.num_heads, -1, -1)  # (B, num_heads, L, D)
-
-        # attention 加權
-        out = torch.matmul(attn_weights.unsqueeze(-2), x_expanded).squeeze(-2)  # (B, num_heads, D)
-
-        # head 之間做平均 (or sum)，得到 (B, D)
-        out = out.mean(dim=1)  # (B, D)
-
-        return out
-
 ###########################################
 # Classifier 模組
 ###########################################
@@ -288,44 +207,32 @@ class Classifier(nn.Module):
 # Detector 模組：結合 SparseMoE 與 Classifier
 ###########################################
 class Detector(nn.Module):
-    def __init__(
-        self, 
-        encoder_dim=1024, 
-        num_experts=24, 
-        expert_dim=128,
-        top_k=4, 
-        num_classes=2,
-        router_temperature=2.0,
-        processor=None, 
-        onnx_session=None
-    ):
+    def __init__(self, encoder_dim=1024, num_experts=24, expert_dim=128, top_k=4, num_classes=2, router_temperature=2.0, processor=None, onnx_session=None):
         super().__init__()
         self.router = TopkRouter(input_dim=encoder_dim, num_experts=num_experts, router_temperature=router_temperature)
-        self.layer_attention = MultiHeadLayerAttention(feature_dim=encoder_dim, num_heads=4)
         self.classifier = Classifier(input_dim=encoder_dim, num_classes=num_classes)
+        self.gru = nn.GRU(encoder_dim, encoder_dim // 2, batch_first=True, bidirectional=True)
+        self.router_norm = nn.LayerNorm(encoder_dim)
         self.pre_norm = nn.LayerNorm(encoder_dim)
         self.processor = processor
         self.session = onnx_session
         self.num_experts = num_experts
+
     def forward(self, wave, router_aug=False, aug_mask=None):
-        """
-        wave: list of waveform tensors (batch of audio signals)
-        """
-        # → [B, 25, T, D] 全部層的 hidden state
         all_hidden_states = self.extract_features_from_onnx(wave)  
-        layer_outputs = all_hidden_states[:, 1:]  # [B, 24, T, D] → 移除 conv 前 embedding 層
+        layer_outputs = all_hidden_states[:, 1:]  # [B, 24, T, D]
         B, L, T, D = layer_outputs.shape
 
-        # 每層 max pooling → [B, 24, D]
         pooled_layers = layer_outputs.mean(dim=2)  # [B, 24, D]
-        # 對各層的 pooled features 做 layer attention
-        routing_input = self.layer_attention(pooled_layers)  # [B, D]
 
+        last_layer = layer_outputs[:, -1, :, :]  # [B, T, D]
+        gru_out, _ = self.gru(last_layer)  # [B, T, D]
+        routing_input = gru_out.mean(dim=1)  # [B, D]
+        routing_input = self.router_norm(routing_input)
         routing_weights = self.router(routing_input, augment=router_aug, aug_mask=aug_mask)  # [B, 24]
-        # 加權融合所有 pooled features
         fused = torch.sum(routing_weights.unsqueeze(-1) * pooled_layers, dim=1)  # [B, D]
         fused = self.pre_norm(fused)
-        logits = self.classifier(fused)  # [B, num_classes]
+        logits = self.classifier(fused)
         return logits, routing_weights, fused
 
     def extract_features_from_onnx(self, waveform):
