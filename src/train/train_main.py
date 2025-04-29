@@ -27,54 +27,6 @@ def set_seed(seed: int):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-# --- Dual-space pseudo label: 根據 cosine similarity 將 feature 與 prototype 進行比對 ---
-def compute_pseudo_label(features, prototypes, mode='hard'):
-    """
-    features: (B, D)
-    prototypes: (num_classes, D)
-    mode: 'hard' 直接 argmax, 'soft' 返回 softmax 分佈
-    """
-    # 需要正規化 features 與 prototypes，否則受到長度影響
-    features = F.normalize(features, dim=1)
-    prototypes = F.normalize(prototypes, dim=1)
-    sim = torch.matmul(features, prototypes.T)  # (B, num_classes)
-    
-    # 根據 cosine similarity 計算 pseudo label
-    # 這裡我們可以選擇 hard 或 soft 方式
-    # hard: 直接 argmax，soft: 使用 softmax 計算概率分佈
-    if mode == 'hard':
-        return torch.argmax(sim, dim=1)
-    else:
-        return F.softmax(sim, dim=1)
-
-"""
-    模型一個「低信心懲罰」，來幫助模型辨識 unknown spoof
-    pesudo label 給予較高的信心，routing 跟 MoE 都猜一樣的，模型假的機率要更有信心（機率高）
-    反之，如果 routing 跟 MoE 猜的不同，則給予較低的信心（機率低）
-
-    意思是 routing, moe 行為不應該硬分，而是保持中立太度，為了接下來 unknown proto 做準備
-    為接下來的「unknown proto clustering」或「reject decision」留空間
-"""
-def compute_consistency_loss(feature_labels, routing_labels, logits, soft=False):
-    conf = torch.max(F.softmax(logits, dim=1), dim=1)[0]  # [B] → 最大類別機率
-    target = (feature_labels == routing_labels).float() # 一樣為 1，不一樣為 0
-    # 也可以用 soft 方式，若不一致給 0.1 的信心
-    if soft:
-        target = target * 1.0 + (1 - target) * 0.1
-    loss = F.binary_cross_entropy(conf, target)
-    return loss
-
-# === 推離 unknown prototype 的 loss ===
-def push_away_from_unknown(features, unknown_prototypes, temperature=0.07):
-    if unknown_prototypes is None or features.size(0) == 0:
-        return torch.tensor(0.0, device=features.device)
-    features = F.normalize(features, dim=1)
-    unknown_prototypes = F.normalize(unknown_prototypes, dim=1)
-    logits = torch.matmul(features, unknown_prototypes.T)  # (B, K)
-    logits = logits / temperature
-    loss = -torch.logsumexp(logits, dim=1).mean()
-    return loss
-
 def safe_release(*objs):
     for obj in objs:
         if obj is not None:
@@ -139,12 +91,15 @@ def train_model(args):
                 label = label.to(device)
                 wave = wave.to(device)
                 optimizer.zero_grad()
-                # forward pass，這裡我們根據一定機率啟用 router augmentation
-                # random.random() < args.router_aug_prob, 則啟用 routing augmentation
-                router_aug_flag = (random.random() < args.router_aug_prob)
-                # spoof 樣本才做 mask
-                aug_mask = (label == 1)
-                logits, routing, fused_output = model(wave=wave, router_aug=router_aug_flag, aug_mask=aug_mask)
+
+                if random.random() < args.aug_prob:
+                    aug_flag = True
+                    aug_mask = (label == 1)
+                else:
+                    aug_flag = False
+                    aug_mask = None
+
+                logits, routing, fused_output = model(wave=wave, is_aug=aug_flag, aug_mask=aug_mask, aug_method=args.aug_method)
                 # CrossEntropy Loss (分類 loss)
                 loss_ce = ce_loss_fn(logits, label)
 

@@ -19,7 +19,8 @@ train:
   patience: 7
   warmup_epochs: 5
   consistency_warmup: 5
-  router_aug_prob: 0.5
+  aug_prob: 0.3
+  aug_method: "additive_noise"
   unknown_cluster_interval: 5
   router_temperature: 2.0
   datasets: ["Asvspoof2019_LA"]

@@ -181,7 +181,8 @@ class Detector(nn.Module):
         self.pre_norm = nn.LayerNorm(encoder_dim//2)
         self.classifier = Classifier(input_dim=encoder_dim//2, num_classes=num_classes)
 
-    def forward(self, wave, router_aug=False, aug_mask=None):
+    def forward(self, wave, is_aug=False, aug_mask=None, aug_method="additive_noise"):
+       
         all_hidden_states = self.extract_features_from_onnx(wave)  
         layer_outputs = all_hidden_states[:, 1:]  # [B, 24, T, D]
         B, L, T, D = layer_outputs.shape
@@ -202,10 +203,31 @@ class Detector(nn.Module):
 
         # -- Fusion
         fused = (pooled * routing_weights.unsqueeze(-1)).sum(dim=1)  # (B, expert_dim)
+
+        fused = self.apply_augmentation(fused, is_aug, aug_mask, aug_method)  # (B, expert_dim)
         fused = self.pre_norm(fused)
         logits = self.classifier(fused)
 
         return logits, routing_weights, fused
+
+    def apply_augmentation(self, feature, is_aug, aug_mask, aug_method): 
+        if not is_aug or aug_mask is None:
+            return feature
+        
+        feature = feature.clone()
+
+        if aug_method == "additive_noise":
+            noise_std=0.05
+            noise = torch.randn_like(feature[aug_mask]) * noise_std
+            feature[aug_mask] = feature[aug_mask] + noise
+        elif aug_method == "affine":
+            scale_range=(0.9, 1.1)
+            shift_range=(-0.1, 0.1)
+            scale = torch.empty((feature[aug_mask].size(0), 1), device=feature.device).uniform_(*scale_range)
+            shift = torch.empty((feature[aug_mask].size(0), 1), device=feature.device).uniform_(*shift_range)
+            feature[aug_mask] = scale * feature[aug_mask] + shift
+
+        return feature
 
     def extract_features_from_onnx(self, waveform):
         """
