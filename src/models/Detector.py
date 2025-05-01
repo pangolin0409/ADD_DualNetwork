@@ -2,78 +2,69 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import math
-###########################################
-# MoCo-style Memory Bank (Prototype Memory)
-###########################################
-class MemoryBank(nn.Module):
-    def __init__(self, feature_dim, num_classes, momentum=0.99):
-        super(MemoryBank, self).__init__()
-        self.register_buffer('prototypes', torch.zeros(num_classes, feature_dim))
-        self.momentum = momentum
+from sklearn.cluster import KMeans
 
+class ExpertPrototypeBank:
+    def __init__(self, num_experts, feature_dim, momentum=0.01, device='cuda'):
+        self.num_experts = num_experts
+        self.feature_dim = feature_dim
+        self.momentum = momentum
+        self.device = device
+        self.prototypes = torch.zeros(num_experts, 2, feature_dim, device=device)
+
+    def _compute_batch_proto(self, features, labels):
+        B, L, D = features.shape
+        features = features.view(B * L, D)
+        labels = labels.unsqueeze(1).expand(B, L).reshape(-1)
+        expert_ids = torch.arange(L, device=features.device).repeat(B)
+
+        proto_dict = {}
+        for class_id in [0, 1]:
+            mask = (labels == class_id)
+            if mask.sum() == 0:
+                continue
+            feats = features[mask]
+            experts = expert_ids[mask]
+
+            sums = torch.zeros(self.num_experts, D, device=self.device)
+            counts = torch.zeros(self.num_experts, 1, device=self.device)
+
+            sums.index_add_(0, experts, feats)
+            counts.index_add_(0, experts, torch.ones_like(experts, dtype=torch.float).unsqueeze(1))
+            counts = counts.clamp(min=1.0)
+            proto_dict[class_id] = sums / counts  # [E, D]
+
+        return proto_dict
+    
+    def initialize(self, features, labels):
+        proto_dict = self._compute_batch_proto(features, labels)
+        for class_id, proto in proto_dict.items():
+            self.prototypes[:, class_id, :] = proto
+        
     def update(self, features, labels):
-        for i in range(features.size(0)):
-            label = labels[i]
-            self.prototypes[label] = self.momentum * self.prototypes[label] + (1 - self.momentum) * features[i]
-        self.prototypes = F.normalize(self.prototypes, p=2, dim=1)
-
-class UnknownMemoryBank(nn.Module):
-    def __init__(self, feature_dim, num_clusters=3, momentum=0.99):
-        super().__init__()
-        self.register_buffer('unknown_proto', torch.zeros(num_clusters, feature_dim))
-        self.momentum = momentum
-        self.initialized = False
-
-    def update_from_kmeans(self, new_centroids):
-        # new_centroids: (K, D) from sklearn KMeans
-        new_centroids = F.normalize(new_centroids, dim=1)
-        if not self.initialized:
-            self.unknown_proto = new_centroids.clone().detach()
-            self.initialized = True
-        else:
-            self.unknown_proto = (
-                self.momentum * self.unknown_proto + (1 - self.momentum) * new_centroids
+        proto_dict = self._compute_batch_proto(features, labels)
+        for class_id, new_proto in proto_dict.items():
+            self.prototypes[:, class_id, :] = (
+                (1 - self.momentum) * self.prototypes[:, class_id, :] +
+                self.momentum * new_proto
             )
-        self.unknown_proto = F.normalize(self.unknown_proto, dim=1)
 
     def get(self):
-        return self.unknown_proto
+        return self.prototypes
 
-###########################################
-# Contrastive Loss（NT-Xent）
-###########################################
-class ContrastiveLoss(nn.Module):
-    def __init__(self, temperature=0.07):
-        super(ContrastiveLoss, self).__init__()
-        self.temperature = temperature
-
-    def forward(self, features, labels):
-        features = F.normalize(features, p=2, dim=1)
-        similarity_matrix = torch.matmul(features, features.t())
-        logits = similarity_matrix / self.temperature
-        labels = labels.contiguous().view(-1, 1)
-        mask = torch.eye(logits.shape[0], dtype=torch.bool, device=logits.device)
-        logits_masked = logits.masked_fill(mask, -1e9)
-        positive_mask = torch.eq(labels, labels.t()).float().to(logits.device) - torch.eye(logits.shape[0], device=logits.device)
-        log_prob = F.log_softmax(logits_masked, dim=1)
-        loss = - (positive_mask * log_prob).sum(dim=1) / (positive_mask.sum(dim=1) + 1e-9)
-        loss = loss.mean()
-        return loss
-    
 ###########################################
 # Router 模組（包含 Data Augmentation）
 ###########################################
-class TopkRouter(nn.Module):
+class SigmoidRouter(nn.Module):
     def __init__(self, input_dim, num_experts, hidden_dim=128, router_temperature=2.0):
-        super(TopkRouter, self).__init__()
+        super(SigmoidRouter, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.1)
         self.fc2 = nn.Linear(hidden_dim, num_experts)
         self.noise_linear = nn.Linear(input_dim, num_experts)
         self.router_temperature = router_temperature
-        self.softmax = nn.Softmax(dim=-1)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         out = self.dropout(self.relu(self.fc1(x)))  # (batch, hidden_dim)
@@ -81,62 +72,8 @@ class TopkRouter(nn.Module):
         noise_scale = F.softplus(self.noise_linear(x))  # 保證是正值
         noise = torch.randn_like(logits) * noise_scale
         logits = logits + noise
-        routing = self.softmax(logits / self.router_temperature)
+        routing = self.sigmoid(logits / self.router_temperature)
         return routing
-
-class SparseMoE(nn.Module):
-    def __init__(self, in_dim, out_dim, num_experts, top_k):
-        """
-        Args:
-            in_dim (int): 輸入特徵維度。
-            out_dim (int): 每個 expert 的輸出維度。
-            num_experts (int): 專家數量。
-            top_k (int): 每筆樣本選擇 top-k expert。
-        """
-        super(SparseMoE, self).__init__()
-        self.num_experts = num_experts
-        self.top_k = top_k
-        # 不需要將 top_k 傳入 Router，Router 只輸出 routing vector
-        self.router = TopkRouter(in_dim, num_experts)
-        self.experts = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(in_dim, out_dim),
-                nn.ReLU(),
-                nn.Linear(out_dim, out_dim)
-            ) for _ in range(num_experts)
-        ])
-    
-    def forward(self, x, router_aug=False, aug_mask=None):
-        # x: [B, in_dim]
-        routing_weights = self.router(x, augment=router_aug, aug_mask= aug_mask)  # (batch, num_experts)
-        topk_values, topk_indices = torch.topk(routing_weights, self.top_k, dim=1)
-        
-        B = x.size(0)
-        # 計算 expert 輸出
-        expert_outputs = []
-        for expert in self.experts:
-            expert_outputs.append(expert(x))  # 每個: (B, out_dim)
-        expert_outputs = torch.stack(expert_outputs, dim=1)  # (B, num_experts, out_dim)
-        
-        # 初始化 fused output
-        out_dim = expert_outputs.shape[-1]
-        fused = torch.zeros(B, out_dim, device=x.device)
-        
-        # 對每個 expert
-        for expert_idx in range(self.num_experts):
-            # 找出哪些樣本在 top_k 中選中了當前 expert_idx
-            mask = (topk_indices == expert_idx)  # [B, top_k]
-            sample_mask = mask.any(dim=1)         # [B]
-            if sample_mask.sum() == 0:
-                continue
-            x_subset = x[sample_mask]  # (B_subset, in_dim)
-            # expert 輸出
-            expert_out = self.experts[expert_idx](x_subset)  # (B_subset, out_dim)
-            # 從 routing_weights 中取出該 expert 的分數
-            gating_subset = routing_weights[sample_mask, expert_idx]  # (B_subset)
-            weighted_out = expert_out * gating_subset.unsqueeze(-1)
-            fused[sample_mask] += weighted_out
-        return fused, routing_weights  # 返回 fused output 與原 routing_weights
 
 ###########################################
 # Classifier 模組
@@ -165,32 +102,35 @@ class Detector(nn.Module):
         self.session = onnx_session
 
         # 一個大MLP處理所有層
-        self.mlp = nn.Sequential(
-            nn.Linear(encoder_dim, encoder_dim//2),
-            nn.ReLU(),
-            nn.Linear(encoder_dim//2, encoder_dim//2),
-        )
+        self.mlps = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(encoder_dim, encoder_dim // 2),
+                nn.ReLU(),
+                nn.Linear(encoder_dim // 2, encoder_dim // 2)
+            ) for _ in range(24)
+        ])
 
         # Attention pooling也是一個大的Linear
         self.attn_score = nn.Linear(encoder_dim//2, 1)
 
         # Router
-        self.router = TopkRouter((encoder_dim*num_experts)//2, num_experts, router_temperature=router_temperature)
+        self.router = SigmoidRouter((encoder_dim*num_experts)//2, num_experts, router_temperature=router_temperature)
 
         self.router_temperature = router_temperature
         self.pre_norm = nn.LayerNorm(encoder_dim//2)
         self.classifier = Classifier(input_dim=encoder_dim//2, num_classes=num_classes)
 
-    def forward(self, wave, is_aug=False, aug_mask=None, aug_method="additive_noise"):
+    def forward(self, wave, is_aug=False, aug_mask=None, aug_method="additive_noise", router_mode="learned"):
        
         all_hidden_states = self.extract_features_from_onnx(wave)  
         layer_outputs = all_hidden_states[:, 1:]  # [B, 24, T, D]
         B, L, T, D = layer_outputs.shape
 
         # -- MLP處理
-        x = layer_outputs.reshape(B * L, T, D)  # (B*24, T, D)
-        x = self.mlp(x)  # (B*24, T, expert_dim)
-        x = x.reshape(B, L, T, -1)  # (B, 24, T, expert_dim)
+        out = []
+        for i, mlp in enumerate(self.mlps):
+            out.append(mlp(layer_outputs[:, i]))  # x: [B, 24, T, D] → x[:, i]: [B, T, D]
+        x = torch.stack(out, dim=1)  # [B, 24, T, D']
 
         # -- Attention Pooling
         score = self.attn_score(x)  # (B, 24, T, 1)
@@ -199,7 +139,11 @@ class Detector(nn.Module):
 
         # -- Router
         router_input = pooled.reshape(B, -1)  # (B, 24*expert_dim)
-        routing_weights = self.router(router_input)  # (B, num_experts)
+
+        if router_mode == "uniform":
+            routing_weights = torch.ones(B, self.num_experts, device=pooled.device) / self.num_experts
+        else:
+            routing_weights = self.router(router_input)  # (B, num_experts)
 
         # -- Fusion
         fused = (pooled * routing_weights.unsqueeze(-1)).sum(dim=1)  # (B, expert_dim)
@@ -208,7 +152,7 @@ class Detector(nn.Module):
         fused = self.pre_norm(fused)
         logits = self.classifier(fused)
 
-        return logits, routing_weights, fused
+        return logits, routing_weights, fused, pooled
 
     def apply_augmentation(self, feature, is_aug, aug_mask, aug_method): 
         if not is_aug or aug_mask is None:

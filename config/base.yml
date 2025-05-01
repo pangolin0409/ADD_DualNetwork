@@ -14,15 +14,21 @@ train:
   weight_decay: 0.0001
   batch_size: 128
   lr: 0.0001
-  num_epochs: 10
-  nb_worker: 4
+  num_epochs: 20
+  nb_worker: 8
   patience: 7
-  warmup_epochs: 5
+  warmup_epochs: 3
+  enable_contrastive_epoch: 5
   consistency_warmup: 5
-  aug_prob: 0.3
+  aug_prob: 0.5
   aug_method: "additive_noise"
   unknown_cluster_interval: 5
   router_temperature: 2.0
+  k_bonafide: 5
+  k_spoof: 10
+  momentum: 0.1
+  prototype_temperature: 0.1
+  sample_to_temperature: 0.07
   datasets: ["Asvspoof2019_LA"]
 
 inference:
@@ -39,6 +45,7 @@ loss:
   lambda_router_supervised: 0.1
   lambda_unknown: 0.0
   lambda_entropy: 0.0
+  lambda_proto: 0.0
 
 paths:
   aasist_config_path: "./config/AASIST.conf"
@@ -53,3 +60,4 @@ meta:
   description: "Layer-Selection + DSD"
   discord_webhook: "https://discord.com/api/webhooks/1363816820028739756/_k6XM40W5f4OaRN0RJqWweG-AP-8rQbLIcZ_7x4YzK0ZjqPus7fSV9L_ul19B2pwrP9D"
   secret_yml_path: "./config/secret.yml"
+  project_name: "audio-deepfake-detection"

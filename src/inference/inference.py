@@ -75,7 +75,7 @@ def inference_loop(args, model):
         labels = labels.to(args.device)
         # 模型推理 (批量)
         with torch.no_grad():
-            logits, routing, fused_output = model(wave=wave)
+            logits, routing, fused_output, time_pooled_feat = model(wave=wave)
             scores = softmax(logits, dim=1)[:, 1]
 
         score_loader.extend(scores.detach().cpu().numpy().tolist())
