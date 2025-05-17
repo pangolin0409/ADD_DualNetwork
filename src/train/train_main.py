@@ -9,8 +9,8 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR, StepLR, SequentialLR
 from transformers import Wav2Vec2FeatureExtractor
 import onnxruntime as ort
-from src.models.Detector import Detector, ExpertPrototypeBank
-from src.data.load_datasets import load_datasets
+from src.models.Detector import Detector, AdaptiveMarginManager
+from src.data.load_datasets import load_datasets, load_train_dataset, load_validation_dataset
 from src.utils.eval_metrics import compute_eer
 import wandb
 from src.utils.common_utils import get_git_branch, send_discord
@@ -69,12 +69,36 @@ def sample_to_prototype_contrastive_loss(pooled, labels, prototypes, routing_wei
 
     return weighted_loss
 
+def adaptive_length_loss(features: torch.Tensor, labels: torch.Tensor, margin, weight) -> torch.Tensor:
+    real = features[labels == 0]
+    fake = features[labels == 1]
+
+    if real.shape[0] > 0:
+        real_loss = weight * real.norm(p=2, dim=1).mean()
+    else:
+        real_loss = torch.tensor(0.0, device=features.device)
+
+    if fake.shape[0] > 0:
+        fake_loss = F.relu(margin - fake.norm(p=2, dim=1)).mean()
+    else:
+        fake_loss = torch.tensor(0.0, device=features.device)
+
+    return real_loss + fake_loss
+
+
+def clad_contrastive_loss(q: torch.Tensor, k: torch.Tensor, negatives: torch.Tensor, temperature: float) -> torch.Tensor:
+    q = F.normalize(q, dim=-1)
+    k = F.normalize(k, dim=-1)
+    negatives = F.normalize(negatives, dim=-1)
+    pos_sim = torch.exp(torch.sum(q * k, dim=-1) / temperature)
+    neg_sim = torch.exp(torch.matmul(q, negatives.T) / temperature).sum(dim=-1)
+    return -torch.log(pos_sim / (pos_sim + neg_sim + 1e-8)).mean()
 
 ###########################################
 # 訓練程式碼
 ###########################################
 
-def train_loop(args, model, proto_memory, device):
+def train_loop(args, model: Detector, margin_manager: AdaptiveMarginManager, device):
     webhook = args.discord_webhook
 
     # Optimizer 與 Scheduler
@@ -84,8 +108,10 @@ def train_loop(args, model, proto_memory, device):
     scheduler_step = StepLR(optimizer, step_size=5, gamma=0.7)
     scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_step], milestones=[warmup_epochs])
     
-    train_loader, val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.datasets
-    , worker_size=args.nb_worker, target_fake_ratio=1, test=False, is_downsample=False)
+    train_loader, val_loader_subsample = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.datasets
+    , worker_size=args.nb_worker, subsample_size = 5000)
+    val_loader_full = load_validation_dataset(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.datasets
+    , worker_size=args.nb_worker, subsample_size=None)
 
     # Loss 計算：主要包括 CrossEntropy、Contrastive Loss、Consistency Loss、MoE 正則化（load balance, limp）
     ce_loss_fn = nn.CrossEntropyLoss()
@@ -94,12 +120,36 @@ def train_loop(args, model, proto_memory, device):
     best_val_loss = float("inf")
     patience_counter = 0
     proto_initialized = False
-
+    
+    real_norm_sum = 0.0
+    real_count = 0
+    mean_real_norm = 0.0
+    
     for epoch in trange(args.num_epochs, desc="Epochs"):
         model.train()
         total_loss = 0.0
         total_samples = 0
         correct = 0
+
+        if epoch < warmup_epochs:
+            router_mode = 'uniform'  # 前期全部平均 routing
+        else:
+            router_mode = 'learned'  # 中期後由 router 學習決定
+        
+        # if router_mode == 'learned':
+        #     if epoch < args.router_temp_anneal_epochs:
+        #         progress = epoch / args.router_temp_anneal_epochs
+        #         router_temp = args.router_temp_start - progress * (args.router_temp_start - args.router_temp_end)
+        #     else:
+        #         router_temp = args.router_temp_end
+
+        #     model.set_router_temperature(router_temp)
+
+        if epoch < args.subsample_val_epoch:
+            val_loader = val_loader_subsample
+        else:
+            val_loader = val_loader_full
+
         for batch_idx, (wave, label) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
             label = label.to(device)
             wave = wave.to(device)
@@ -112,18 +162,13 @@ def train_loop(args, model, proto_memory, device):
                 aug_flag = False
                 aug_mask = None
 
-            if epoch < warmup_epochs:
-                router_mode = 'uniform'  # 前期全部平均 routing
-            else:
-                router_mode = 'learned'  # 中期後由 router 學習決定
 
             logits, routing, fused_output, time_pooled_feat = model(wave=wave, is_aug=aug_flag, aug_mask=aug_mask, aug_method=args.aug_method, router_mode=router_mode)
 
-            if not proto_initialized and epoch >= args.enable_contrastive_epoch:
-                proto_memory.initialize(time_pooled_feat, label)
-                proto_initialized = True
+            if epoch < args.enable_contrastive_epoch:
+                margin_manager.update(fused_output, label)
             else:
-                proto_memory.update(time_pooled_feat, label)
+                margin_manager.update_margin(fused_output, label)
 
             # CrossEntropy Loss (分類 loss)
             loss_ce = ce_loss_fn(logits, label)
@@ -136,12 +181,13 @@ def train_loop(args, model, proto_memory, device):
 
             # prototype loss
             if epoch >= args.enable_contrastive_epoch:
-                prototypes = proto_memory.get()
-                loss_proto = prototype_to_prototype_loss(prototypes.detach(), temperature=args.prototype_temperature)
-                loss_sample_proto = sample_to_prototype_contrastive_loss(time_pooled_feat, label, prototypes.detach(), routing, temperature=args.prototype_temperature)
+                margin = margin_manager.get_margin()
+                loss_length = adaptive_length_loss(fused_output, label, margin, args.adaptive_length_weight)
+
+                margin_manager_log: dict = margin_manager.log_info()
+                wandb.log(margin_manager_log)
             else:
-                loss_proto = torch.tensor(0.0, device=device)
-                loss_sample_proto = torch.tensor(0.0, device=device)
+                loss_length = torch.tensor(0.0, device=device)
 
             # 組合總 loss
             total_batch_loss = (args.lambda_ce * loss_ce + 
@@ -149,9 +195,9 @@ def train_loop(args, model, proto_memory, device):
                                 args.lambda_load * loss_load +
                                 args.lambda_entropy * loss_entropy+
                                 args.lambda_router_supervised * loss_router_supervised_loss+
-                                args.lambda_proto * (loss_proto + loss_sample_proto))
+                                args.lambda_length * loss_length)
             
-            print(f"loss_ce: {loss_ce.item():.4f}, loss_limp: {loss_limp.item():.4f}, loss_load: {loss_load.item():.4f}, loss_entropy: {loss_entropy.item():.4f}, loss_router_supervised: {loss_router_supervised_loss.item():.4f}, loss_proto: {loss_proto.item():.4f}, loss_sample_proto: {loss_sample_proto.item():.4f}")
+            print(f"loss_ce: {loss_ce.item():.4f}, loss_limp: {loss_limp.item():.4f}, loss_load: {loss_load.item():.4f}, loss_entropy: {loss_entropy.item():.4f}, loss_router_supervised: {loss_router_supervised_loss.item():.4f}, loss_length: {loss_length.item():.4f}")
 
             if torch.isnan(total_batch_loss):
                 send_discord("⚠️ NaN detected in total loss", webhook)
@@ -214,8 +260,8 @@ def train_loop(args, model, proto_memory, device):
             "loss/loss_load": loss_load.item(),
             "loss/loss_entropy": loss_entropy.item(),
             "loss/loss_router_supervised": loss_router_supervised_loss.item(),
-            "loss/loss_proto": loss_proto.item(),
-            "loss/loss_sample_proto": loss_sample_proto.item(),
+            "loss/loss_length": loss_length.item(),
+            "norm_mean": mean_real_norm,
         })
 
     return best_eer
@@ -242,12 +288,13 @@ def train_model(args):
         onnx_session = ort.InferenceSession(args.onnx_path, providers=["CUDAExecutionProvider"]) 
         model = Detector(encoder_dim=args.encoder_dim, num_experts=args.num_experts, num_classes=args.num_classes
                          , router_temperature=args.router_temperature, processor=processor, onnx_session=onnx_session).to(device)
-        proto_memory = ExpertPrototypeBank(num_experts=args.num_experts, feature_dim=args.encoder_dim//2, momentum=args.momentum, device=device)
+        
+        margin_manager = AdaptiveMarginManager()
 
-        best_eer = train_loop(args, model, proto_memory, device)
+        best_eer = train_loop(args, model, margin_manager, device)
 
     finally:
-        safe_release(model, onnx_session, proto_memory)
+        safe_release(model, onnx_session, margin_manager)
         print("Cleaned up models and sessions.")
 
     print(f"Training done. Best EER = {best_eer:.4f}")
@@ -271,7 +318,8 @@ def validate(model, val_loader, device, router_mode):
             loss = ce_loss_fn(logits, label)
             total_loss += loss.item() * label.size(0)
             total_samples += label.size(0)
-            scores = F.softmax(logits, dim=1)[:, 1]  # spoof 機率
+            diff = logits[:, 1] - logits[:, 0]
+            scores = torch.sigmoid(diff)
 
             score_list.append(scores)
             label_list.append(label)

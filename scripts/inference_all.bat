@@ -1,10 +1,9 @@
 @echo off
 call conda activate audio
-set MODEL=LS_RS_ASV2019
-
+set MODEL=MOE_ASV2019
 python main.py --experiment train --model_name "%MODEL%"
 
-set TASKS="Asvspoof2019_LA" "in_the_wild" "ASVspoof2021_DF"
+set TASKS="in_the_wild" "SOTA" "Asvspoof2019_LA"  "ASVspoof2021_DF"
 
 for %%T in (%TASKS%) do (
     echo Running task: %%~T

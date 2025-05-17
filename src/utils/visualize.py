@@ -40,6 +40,30 @@ def draw_ft_dist(features, labels, task, save_path, label_names=None):
     plt.savefig(os.path.join(save_path, f"feature_distribution_on_{task}.png"))
     plt.close()
 
+def draw_norm(features, labels, task, save_path):
+    # 把 list of list 轉為 numpy array（shape: [N, D]）
+    features = np.array(features)
+    labels = np.array(labels)
+
+    # 布林 mask indexing 成立
+    real = features[labels == 0]
+    fake = features[labels == 1]
+
+    real_norms = np.linalg.norm(real, ord=2, axis=1)
+    fake_norms = np.linalg.norm(fake, ord=2, axis=1)
+
+    # 畫圖
+    plt.hist(real_norms, bins=50, alpha=0.6, label="Real")
+    plt.hist(fake_norms, bins=50, alpha=0.6, label="Fake")
+    plt.xlabel("L2 Norm")
+    plt.ylabel("Count")
+    plt.title(f"Feature Norm Distribution ({task})")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(save_path, f"feature_norm_on_{task}.png"))
+    plt.close()
+
+
 def draw_roc_curve(scores, labels, task, save_path):
     fpr, tpr, _ = roc_curve(labels, scores)
     roc_auc = auc(fpr, tpr)

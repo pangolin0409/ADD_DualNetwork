@@ -2,55 +2,83 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from sklearn.cluster import KMeans
+import wandb
 
-class ExpertPrototypeBank:
-    def __init__(self, num_experts, feature_dim, momentum=0.01, device='cuda'):
-        self.num_experts = num_experts
-        self.feature_dim = feature_dim
-        self.momentum = momentum
-        self.device = device
-        self.prototypes = torch.zeros(num_experts, 2, feature_dim, device=device)
+class AdaptiveMarginManager:
+    def __init__(self, alpha=0.3):
+        self.alpha = alpha
+        self.real_norm_sum = 0.0
+        self.real_count = 0
+        self.fake_norm_sum = 0.0
+        self.fake_count = 0
 
-    def _compute_batch_proto(self, features, labels):
-        B, L, D = features.shape
-        features = features.view(B * L, D)
-        labels = labels.unsqueeze(1).expand(B, L).reshape(-1)
-        expert_ids = torch.arange(L, device=features.device).repeat(B)
+        self.real_mean = 0.0
+        self.fake_mean = 0.0
+        self.margin = 0.0
 
-        proto_dict = {}
-        for class_id in [0, 1]:
-            mask = (labels == class_id)
-            if mask.sum() == 0:
-                continue
-            feats = features[mask]
-            experts = expert_ids[mask]
+    def update(self, features: torch.Tensor, labels: torch.Tensor):
+        real_mask = (labels == 0)
+        fake_mask = (labels == 1)
 
-            sums = torch.zeros(self.num_experts, D, device=self.device)
-            counts = torch.zeros(self.num_experts, 1, device=self.device)
+        real_feat = features[real_mask]
+        fake_feat = features[fake_mask]
 
-            sums.index_add_(0, experts, feats)
-            counts.index_add_(0, experts, torch.ones_like(experts, dtype=torch.float).unsqueeze(1))
-            counts = counts.clamp(min=1.0)
-            proto_dict[class_id] = sums / counts  # [E, D]
+        if real_feat.shape[0] > 0:
+            self.real_norm_sum += real_feat.norm(p=2, dim=1).sum().item()
+            self.real_count += real_feat.shape[0]
 
-        return proto_dict
-    
-    def initialize(self, features, labels):
-        proto_dict = self._compute_batch_proto(features, labels)
-        for class_id, proto in proto_dict.items():
-            self.prototypes[:, class_id, :] = proto
-        
-    def update(self, features, labels):
-        proto_dict = self._compute_batch_proto(features, labels)
-        for class_id, new_proto in proto_dict.items():
-            self.prototypes[:, class_id, :] = (
-                (1 - self.momentum) * self.prototypes[:, class_id, :] +
-                self.momentum * new_proto
-            )
+        if fake_feat.shape[0] > 0:
+            self.fake_norm_sum += fake_feat.norm(p=2, dim=1).sum().item()
+            self.fake_count += fake_feat.shape[0]
 
-    def get(self):
-        return self.prototypes
+    def compute_margin(self):
+        if self.real_count > 0:
+            self.real_mean = self.real_norm_sum / self.real_count
+        if self.fake_count > 0:
+            self.fake_mean = self.fake_norm_sum / self.fake_count
+
+        if self.real_mean > 0 and self.fake_mean > 0:
+            scale = (1 - self.alpha) + self.alpha * (self.fake_mean / self.real_mean)
+            self.margin = scale * self.real_mean
+
+    def update_margin(self, features: torch.Tensor, labels: torch.Tensor, momentum=0.9):
+        real_mask = (labels == 0)
+        fake_mask = (labels == 1)
+
+        real_feat = features[real_mask]
+        fake_feat = features[fake_mask]
+
+        real_sum = real_feat.norm(p=2, dim=1).sum().item()
+        fake_sum = fake_feat.norm(p=2, dim=1).sum().item()
+
+        real_count = real_feat.shape[0]
+        fake_count = fake_feat.shape[0]
+
+        # 滑動平均更新 sum 和 count
+        self.real_norm_sum = momentum * self.real_norm_sum + (1 - momentum) * real_sum
+        self.fake_norm_sum = momentum * self.fake_norm_sum + (1 - momentum) * fake_sum
+        self.real_count = momentum * self.real_count + (1 - momentum) * real_count
+        self.fake_count = momentum * self.fake_count + (1 - momentum) * fake_count
+
+        self.compute_margin()
+
+    def get_margin(self, fallback=25.0):
+        if self.margin > 0:
+            return self.margin
+        else:
+            print(f"[MarginManager] ⚠️ Margin 未初始化，使用 fallback: {fallback}")
+            return fallback
+
+    def log_info(self, fallback=25.0):
+        margin_value = self.margin if self.margin > 0 else fallback
+        print(f"[MarginManager] real_mean={self.real_mean:.4f}, fake_mean={self.fake_mean:.4f}, margin={margin_value:.4f}")
+        return {
+            "margin/real_mean": self.real_mean,
+            "margin/fake_mean": self.fake_mean,
+            "margin/value": margin_value,
+            "margin/fallback_used": self.margin == 0
+        }
+
 
 ###########################################
 # Router 模組（包含 Data Augmentation）
@@ -153,6 +181,9 @@ class Detector(nn.Module):
         logits = self.classifier(fused)
 
         return logits, routing_weights, fused, pooled
+
+    def set_router_temperature(self, temperature):
+        self.router.router_temperature = temperature
 
     def apply_augmentation(self, feature, is_aug, aug_mask, aug_method): 
         if not is_aug or aug_mask is None:

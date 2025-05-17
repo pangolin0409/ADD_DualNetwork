@@ -12,6 +12,7 @@ from src.utils.eval_metrics import compute_eer
 from src.data.dataloader import RawAudio
 from src.models.Detector import Detector
 from src.utils.common_utils import get_git_branch
+import torch.nn.functional as F
 from src.utils.visualize import (
     draw_expert_usage,
     draw_ft_dist,
@@ -20,6 +21,7 @@ from src.utils.visualize import (
     draw_score_kde,
     draw_expert_heatmap,
     draw_selector_distribution,
+    draw_norm
 )
 import torch.nn as nn
 
@@ -67,7 +69,6 @@ def inference_loop(args, model):
     label_loader = []
     local_gating_loader = []
     moe_feature_loader = []
-
     # 遍歷測試數據
     for i, data_slice in enumerate(tqdm(testDataLoader)):
         wave, labels = data_slice
@@ -82,6 +83,7 @@ def inference_loop(args, model):
         label_loader.extend(labels.detach().cpu().numpy().tolist())
         moe_feature_loader.extend(fused_output.detach().cpu().numpy().tolist())
         local_gating_loader.extend(routing.detach().cpu().numpy().tolist())
+
     
     return score_loader, label_loader, local_gating_loader, moe_feature_loader
 
@@ -163,7 +165,7 @@ def log_selected_plots(plot_dir, task=None, prefix=True):
         wandb.log(log_dict)
 
 def main(args):
-    model_path = os.path.join(args.model_folder, args.model_name, 'best_model.pth')
+    model_path = os.path.join(args.model_folder, args.model_name, 'checkpt_last.pth')
     save_path = os.path.join(args.log_path, args.model_name)
     os.makedirs(save_path, exist_ok=True)
     scores, labels, local_gating_loader, moe_feature_loader = inference(args, model_path, save_path)
@@ -172,13 +174,14 @@ def main(args):
     os.makedirs(plot_dir, exist_ok=True)
 
     # === 視覺化 ===
+    draw_norm(moe_feature_loader, labels, args.task, plot_dir)
     draw_expert_usage(local_gating_loader, args.task, plot_dir)
     draw_ft_dist(moe_feature_loader, labels, args.task, plot_dir, label_names=["Bona fide", "Spoof"])
     draw_roc_curve(scores, labels, args.task, plot_dir)
     draw_confidence_histogram(scores, labels, args.task, plot_dir)
     draw_score_kde(scores, labels, args.task, plot_dir)
     draw_expert_heatmap(local_gating_loader, args.task, plot_dir)
-    log_selected_plots(plot_dir, task=args.task, prefix=True)
+    # log_selected_plots(plot_dir, task=args.task, prefix=True)
     print(f"All visualizations saved in: {plot_dir}")
 
 if __name__ == "__main__":

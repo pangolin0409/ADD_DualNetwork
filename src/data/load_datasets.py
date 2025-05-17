@@ -6,7 +6,12 @@ import random
 """
     載入訓練和驗證數據集。
 """
-def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fake_ratio, test=False, is_downsample=False):
+def load_datasets(sample_rate, batch_size, dataset_names, worker_size, subsample_size = None):
+    train_dataloader = load_train_dataset(sample_rate, batch_size, dataset_names, worker_size)
+    validation_dataloader = load_validation_dataset(sample_rate, batch_size, dataset_names, worker_size, subsample_size)
+    return train_dataloader, validation_dataloader
+
+def load_train_dataset(sample_rate, batch_size, dataset_names, worker_size):
     # 初始化 datasets 和 dataloaders
     training_sets = {}
     for dataset_name in dataset_names:
@@ -20,18 +25,9 @@ def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fa
     
     training_set_list = []
     for name, training_set in training_sets.items():
-        # 如果是測試模式，則不進行下採樣
-        if test:
-            real_indices, spoof_indices = downsample_test_data(meta_path=f'E:/datasets/{name}/train/meta.csv', dataset_name=name)
-        else:
-            # 如果是下採樣模式，則進行下採樣
-            if is_downsample:
-                print(f"Processing dataset hhh: {name}")
-                real_indices, spoof_indices = downsample_data(meta_path=f'E:/datasets/{name}/train/meta.csv', dataset_name=name, target_fake_ratio=target_fake_ratio)
-            else:
-                meta = pd.read_csv(f'E:/datasets/{name}/train/meta.csv')
-                real_indices = meta[meta['label'] == 'bonafide'].index.tolist()
-                spoof_indices = meta[meta['label'] == 'spoof'].index.tolist()
+        meta = pd.read_csv(f'E:/datasets/{name}/train/meta.csv')
+        real_indices = meta[meta['label'] == 'bonafide'].index.tolist()
+        spoof_indices = meta[meta['label'] == 'spoof'].index.tolist()
                 
         # real_indices = random.sample(real_indices, target_fake_count)
         print(f'Real samples: {len(real_indices)}, Spoof samples: {len(spoof_indices)}')
@@ -42,8 +38,9 @@ def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fa
 
     final_training_set = ConcatDataset(training_set_list)
     train_dataloader = DataLoader(final_training_set, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=worker_size, pin_memory=True, persistent_workers=True)
+    return train_dataloader
 
-    # 初始化 datasets 和 dataloaders
+def load_validation_dataset(sample_rate, batch_size, dataset_names, worker_size, subsample_size = None):
     validation_sets = {}
     for dataset_name in dataset_names:
         validation_sets[dataset_name] = RawAudio(
@@ -59,9 +56,16 @@ def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fa
         validation_set_list.append(validation_set)
 
     final_validation_set = ConcatDataset(validation_set_list)
-    validation_dataloader = DataLoader(final_validation_set, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=worker_size, pin_memory=True, persistent_workers=True)
 
-    return train_dataloader, validation_dataloader
+    if subsample_size is not None:
+        indices = random.sample(range(len(final_validation_set)), k=subsample_size)
+        val_subset = Subset(final_validation_set, indices)
+    else:
+        val_subset = final_validation_set
+    print(f'Validation set size: {len(val_subset)}')
+
+    validation_dataloader = DataLoader(val_subset, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=worker_size, pin_memory=True, persistent_workers=True)
+    return validation_dataloader
 
 """
     下採樣數據集，保留所有真樣本，並將假樣本的數量控制為真樣本的 target_fake_ratio 倍。
