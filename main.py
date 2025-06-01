@@ -40,8 +40,7 @@ def main():
         else:
             raise ValueError("Unknown experiment type")
     except Exception as e:
-        print(f"Error: {e}")
-        send_discord(f"❌ 訓練失敗：{args.model_name}", webhook)
+        send_discord(f"❌ 訓練失敗：{args.model_name}，錯誤原因: {e}", webhook)
         raise e
 
 if __name__ == "__main__":

@@ -9,12 +9,12 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR, StepLR, SequentialLR
 from transformers import Wav2Vec2FeatureExtractor
 import onnxruntime as ort
-from src.models.Detector import Detector, ExpertPrototypeBank
+from src.models.Detector import Detector, WaveformAugmentor
 from src.data.load_datasets import load_datasets
 from src.utils.eval_metrics import compute_eer
 import wandb
 from src.utils.common_utils import get_git_branch, send_discord
-
+from src.utils.DatasetUtils import manipulations
 # 把所有「隨機」都固定下來，讓每次訓練結果都一樣
 # 可重現實驗結果
 def set_seed(seed: int):
@@ -74,7 +74,7 @@ def sample_to_prototype_contrastive_loss(pooled, labels, prototypes, routing_wei
 # 訓練程式碼
 ###########################################
 
-def train_loop(args, model, proto_memory, device):
+def train_loop(args, model, device):
     webhook = args.discord_webhook
 
     # Optimizer 與 Scheduler
@@ -84,46 +84,50 @@ def train_loop(args, model, proto_memory, device):
     scheduler_step = StepLR(optimizer, step_size=5, gamma=0.7)
     scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_step], milestones=[warmup_epochs])
     
-    train_loader, val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.datasets
-    , worker_size=args.nb_worker, target_fake_ratio=1, test=False, is_downsample=False)
+    train_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.datasets
+    , worker_size=args.nb_worker, target_fake_ratio=1, part='train', is_downsample=False)
+    val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.datasets
+    , worker_size=args.nb_worker, target_fake_ratio=1, part='validation', is_downsample=False)
+    quick_val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.datasets
+    , worker_size=args.nb_worker, target_fake_ratio=1, part='validation', is_downsample=True)
 
+    selected_keys = args.selected_augs if hasattr(args, "selected_augs") else list(manipulations.keys())
+    selected_manipulations = {k: manipulations[k] for k in selected_keys if k in manipulations}
+    print(f"👉 Selected augmentations: {selected_keys}")
+    augmentor = WaveformAugmentor(
+        manipulation_pool=selected_manipulations,
+        activation_prob=args.aug_prob,
+        min_aug=1,
+        max_aug=2,
+        verbose=True,
+        target_len = args.nb_samp,
+    )
+    
     # Loss 計算：主要包括 CrossEntropy、Contrastive Loss、Consistency Loss、MoE 正則化（load balance, limp）
     ce_loss_fn = nn.CrossEntropyLoss()
 
     best_eer = 999.0
     best_val_loss = float("inf")
     patience_counter = 0
-    proto_initialized = False
 
     for epoch in trange(args.num_epochs, desc="Epochs"):
         model.train()
         total_loss = 0.0
         total_samples = 0
         correct = 0
+        augmentor.update(epoch)  # 更新 waveform augmentation 的參數
         for batch_idx, (wave, label) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
             label = label.to(device)
             wave = wave.to(device)
+            fake_wave = wave[label == 1]  # 假人聲
+            real_wave = wave[label == 0]  # 真人聲
+            fake_wave = augmentor(fake_wave)  # 只對假人聲進行增強
+            wave = torch.cat([real_wave, fake_wave], dim=0)  # 合併增強後的假人聲與真人聲
+            label = torch.cat([label[label == 0], label[label == 1]], dim=0)
+
             optimizer.zero_grad()
 
-            if random.random() < args.aug_prob:
-                aug_flag = True
-                aug_mask = (label == 1)
-            else:
-                aug_flag = False
-                aug_mask = None
-
-            if epoch < warmup_epochs:
-                router_mode = 'uniform'  # 前期全部平均 routing
-            else:
-                router_mode = 'learned'  # 中期後由 router 學習決定
-
-            logits, routing, fused_output, time_pooled_feat = model(wave=wave, is_aug=aug_flag, aug_mask=aug_mask, aug_method=args.aug_method, router_mode=router_mode)
-
-            if not proto_initialized and epoch >= args.enable_contrastive_epoch:
-                proto_memory.initialize(time_pooled_feat, label)
-                proto_initialized = True
-            else:
-                proto_memory.update(time_pooled_feat, label)
+            logits, routing, fused_output, time_pooled_feat = model(wave=wave, epoch=epoch)
 
             # CrossEntropy Loss (分類 loss)
             loss_ce = ce_loss_fn(logits, label)
@@ -134,24 +138,12 @@ def train_loop(args, model, proto_memory, device):
             loss_entropy = model.compute_entropy_loss(routing)
             loss_router_supervised_loss = model.compute_router_supervised_loss(routing, logits, label)
 
-            # prototype loss
-            if epoch >= args.enable_contrastive_epoch:
-                prototypes = proto_memory.get()
-                loss_proto = prototype_to_prototype_loss(prototypes.detach(), temperature=args.prototype_temperature)
-                loss_sample_proto = sample_to_prototype_contrastive_loss(time_pooled_feat, label, prototypes.detach(), routing, temperature=args.prototype_temperature)
-            else:
-                loss_proto = torch.tensor(0.0, device=device)
-                loss_sample_proto = torch.tensor(0.0, device=device)
-
             # 組合總 loss
             total_batch_loss = (args.lambda_ce * loss_ce + 
                                 args.lambda_limp * loss_limp +
                                 args.lambda_load * loss_load +
                                 args.lambda_entropy * loss_entropy+
-                                args.lambda_router_supervised * loss_router_supervised_loss+
-                                args.lambda_proto * (loss_proto + loss_sample_proto))
-            
-            print(f"loss_ce: {loss_ce.item():.4f}, loss_limp: {loss_limp.item():.4f}, loss_load: {loss_load.item():.4f}, loss_entropy: {loss_entropy.item():.4f}, loss_router_supervised: {loss_router_supervised_loss.item():.4f}, loss_proto: {loss_proto.item():.4f}, loss_sample_proto: {loss_sample_proto.item():.4f}")
+                                args.lambda_router_supervised * loss_router_supervised_loss)
 
             if torch.isnan(total_batch_loss):
                 send_discord("⚠️ NaN detected in total loss", webhook)
@@ -174,7 +166,11 @@ def train_loop(args, model, proto_memory, device):
         print(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.5f}")
         
         # 驗證
-        eer, val_loss = validate(model, val_loader, device, router_mode)
+        eer, val_loss = validate(model, quick_val_loader, device, epoch, args.router_temperature, args.router_alpha)
+        # if epoch != 0 and epoch % 5 == 0:
+        #     eer, val_loss = validate(model, val_loader, device, epoch, args.router_temperature, args.router_alpha)
+        # else:
+        #     eer, val_loss = validate(model, quick_val_loader, device, epoch, args.router_temperature, args.router_alpha)
         print(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}")
 
         with open(os.path.join(args.log_path, args.model_name, "log.txt"), "a") as f:
@@ -183,12 +179,22 @@ def train_loop(args, model, proto_memory, device):
             f.write(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}\n")
 
         # Save checkpoint
-        model_path = os.path.join(args.save_path, args.model_name, f"checkpt_last.pth")
+        model_path = os.path.join(args.save_path, args.model_name, f"checkpt_epoch_{epoch}.pth")
         best_model_path = os.path.join(args.save_path, args.model_name, "best_model.pth")
-        torch.save(model.state_dict(), model_path)
+        torch.save({
+                'model_state_dict': model.state_dict(),
+                'best_temp': args.router_temperature,
+                'best_alpha': args.router_alpha,
+                'epoch': epoch,
+            }, model_path)
         if eer < best_eer:
             best_eer = eer
-            torch.save(model.state_dict(), best_model_path)
+            torch.save({
+                'model_state_dict': model.state_dict(),
+                'best_temp': args.router_temperature,
+                'best_alpha': args.router_alpha,
+                'epoch': epoch,
+            }, best_model_path)
             send_discord(f"✨ 新最佳模型：{args.model_name} | EER: {eer:.4f}", webhook)
             print("=> Best model updated.")
 
@@ -214,8 +220,6 @@ def train_loop(args, model, proto_memory, device):
             "loss/loss_load": loss_load.item(),
             "loss/loss_entropy": loss_entropy.item(),
             "loss/loss_router_supervised": loss_router_supervised_loss.item(),
-            "loss/loss_proto": loss_proto.item(),
-            "loss/loss_sample_proto": loss_sample_proto.item(),
         })
 
     return best_eer
@@ -236,18 +240,14 @@ def train_model(args):
 
     model = None
     onnx_session = None
-    proto_memory = None
     try:
         # 初始化模型架構
         onnx_session = ort.InferenceSession(args.onnx_path, providers=["CUDAExecutionProvider"]) 
         model = Detector(encoder_dim=args.encoder_dim, num_experts=args.num_experts, num_classes=args.num_classes
-                         , router_temperature=args.router_temperature, processor=processor, onnx_session=onnx_session).to(device)
-        proto_memory = ExpertPrototypeBank(num_experts=args.num_experts, feature_dim=args.encoder_dim//2, momentum=args.momentum, device=device)
-
-        best_eer = train_loop(args, model, proto_memory, device)
-
+                         , max_temp=args.max_temp, min_temp=args.min_temp, warmup_epochs=args.warmup_epochs , processor=processor, onnx_session=onnx_session).to(device)
+        best_eer = train_loop(args, model, device)
     finally:
-        safe_release(model, onnx_session, proto_memory)
+        safe_release(model, onnx_session)
         print("Cleaned up models and sessions.")
 
     print(f"Training done. Best EER = {best_eer:.4f}")
@@ -255,7 +255,7 @@ def train_model(args):
 ###########################################
 # 驗證函數（包含 EER 計算）
 ###########################################
-def validate(model, val_loader, device, router_mode):
+def validate(model, val_loader, device, epoch, router_temperature, router_alpha):
     model.eval()
     total_loss = 0.0
     total_samples = 0
@@ -267,7 +267,7 @@ def validate(model, val_loader, device, router_mode):
         for (wave, label) in tqdm(val_loader, desc="Validation"):
             label = label.to(device)
             wave = wave.to(device)
-            logits, routing, fused_output, time_pooled_feat = model(wave=wave, router_mode=router_mode)
+            logits, routing, fused_output, time_pooled_feat = model(wave=wave, epoch=epoch)
             loss = ce_loss_fn(logits, label)
             total_loss += loss.item() * label.size(0)
             total_samples += label.size(0)

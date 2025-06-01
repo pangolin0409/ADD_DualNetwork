@@ -40,6 +40,29 @@ def draw_ft_dist(features, labels, task, save_path, label_names=None):
     plt.savefig(os.path.join(save_path, f"feature_distribution_on_{task}.png"))
     plt.close()
 
+def draw_norm(features, labels, task, save_path):
+    # 把 list of list 轉為 numpy array（shape: [N, D]）
+    features = np.array(features)
+    labels = np.array(labels)
+
+    # 布林 mask indexing 成立
+    real = features[labels == 0]
+    fake = features[labels == 1]
+
+    real_norms = np.linalg.norm(real, ord=2, axis=1)
+    fake_norms = np.linalg.norm(fake, ord=2, axis=1)
+
+    # 畫圖
+    plt.hist(real_norms, bins=50, alpha=0.6, label="Real")
+    plt.hist(fake_norms, bins=50, alpha=0.6, label="Fake")
+    plt.xlabel("L2 Norm")
+    plt.ylabel("Count")
+    plt.title(f"Feature Norm Distribution ({task})")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(save_path, f"feature_norm_on_{task}.png"))
+    plt.close()
+
 def draw_roc_curve(scores, labels, task, save_path):
     fpr, tpr, _ = roc_curve(labels, scores)
     roc_auc = auc(fpr, tpr)
@@ -118,3 +141,58 @@ def draw_selector_distribution(topk_idx_list, labels, save_path, k, task, num_la
     plt.tight_layout()
     plt.savefig(os.path.join(save_path, f"selector_layer_freq_on_{task}.png"))
     plt.close()
+
+def draw_ft_direction(features, labels, task, save_path, label_names=None):
+    features = np.array(features)
+    labels = np.array(labels)
+
+    # 🔁 步驟 1：normalize to unit vector（即映射到球面）
+    norms = np.linalg.norm(features, axis=1, keepdims=True)
+    features = features / (norms + 1e-6)
+
+    # 🔁 步驟 2：t-SNE 作投影
+    tsne = TSNE(n_components=2, perplexity=10, init='pca', learning_rate='auto', random_state=42, max_iter=1000)
+    reduced = tsne.fit_transform(features)
+
+    # 🔁 步驟 3：畫圖
+    plt.figure(figsize=(10, 8))
+    for i, name in enumerate(label_names or []):
+        idx = (labels == i)
+        plt.scatter(reduced[idx, 0], reduced[idx, 1], label=name, s=8, alpha=0.5)
+    plt.legend()
+    plt.title(f"**Spherical Feature Direction Distribution** on {task}")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_path, f"spherical_direction_on_{task}.png"))
+    plt.close()
+
+def draw_spherical_feature_stats(features, labels, task, save_path):
+    features = np.array(features)
+    labels = np.array(labels)
+
+    # ✅ Normalize to unit sphere
+    features = features / (np.linalg.norm(features, axis=1, keepdims=True) + 1e-6)
+
+    # ✅ 只畫前幾維比較有意義（比如 5 維）
+    dims_to_plot = 5
+    dim_indices = np.arange(min(dims_to_plot, features.shape[1]))
+
+    real = features[labels == 0]
+    fake = features[labels == 1]
+
+    plt.figure(figsize=(12, 8))
+    for i, dim in enumerate(dim_indices):
+        plt.subplot(2, 3, i + 1)
+        plt.hist(real[:, dim], bins=50, alpha=0.5, label='Real')
+        plt.hist(fake[:, dim], bins=50, alpha=0.5, label='Fake')
+        plt.title(f"Dim {dim} Distribution")
+        plt.xlabel("Value on Unit Sphere")
+        plt.ylabel("Count")
+        plt.legend()
+
+    plt.suptitle(f"Spherical Feature Dimension-wise Distribution ({task})")
+    plt.tight_layout()
+    os.makedirs(save_path, exist_ok=True)
+    plt.savefig(os.path.join(save_path, f"spherical_feature_stats_{task}.png"))
+    plt.close()
+

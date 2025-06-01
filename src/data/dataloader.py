@@ -59,7 +59,53 @@ class RawAudio(data.Dataset):
         if x.size == 0:
             raise ValueError("The input array 'x' is empty.")
         return x/np.max(np.abs(x))
-    
+
+class RawAudioBackup(data.Dataset):
+    def __init__(self, path_to_database, meta_csv, nb_samp=16000*4, part='test', return_label=True):
+        super().__init__()
+        self.path_to_audio = path_to_database
+        self.meta_path = os.path.join(path_to_database, part, meta_csv)
+        self.audio_dir = os.path.join(path_to_database, part, 'audio')
+        self.nb_samp = nb_samp
+        self.return_label = return_label
+
+        self.meta_data = pd.read_csv(self.meta_path)
+        self.label_map = {"spoof": 1, "bonafide": 0}
+
+    def __len__(self):
+        return len(self.meta_data)
+
+    def _normalize(self, x):
+        x = x.astype(np.float32)
+        mean = np.mean(x)
+        std = np.std(x)
+        return (x - mean) / (std + 1e-7)
+
+    def __getitem__(self, index):
+        row = self.meta_data.iloc[index]
+        file = row['filename']
+        label = row['label'] if 'label' in row else 'bonafide'
+
+        # 讀取音訊
+        path = os.path.join(self.audio_dir, file)
+        x, _ = sf.read(path)
+        x = self._normalize(x)
+
+        # padding or truncate
+        if len(x) < self.nb_samp:
+            repeat = int(np.ceil(self.nb_samp / len(x)))
+            x = np.tile(x, repeat)[:self.nb_samp]
+        else:
+            x = x[:self.nb_samp]
+
+        # x = torch.tensor(x, dtype=torch.float32)
+
+        if self.return_label:
+            y = self.label_map[label]
+            return x, y
+        else:
+            return x
+        
 class PreprocessRawAudio(data.Dataset):
     def __init__(self, path_to_database, meta_csv, nb_samp = 0, cut = True, norm_scale = True, part='train'):
         super(PreprocessRawAudio, self).__init__()

@@ -19,7 +19,9 @@ from src.utils.visualize import (
     draw_confidence_histogram,
     draw_score_kde,
     draw_expert_heatmap,
-    draw_selector_distribution,
+    draw_norm,
+    draw_spherical_feature_stats,
+    draw_ft_direction,
 )
 import torch.nn as nn
 
@@ -32,13 +34,13 @@ def safe_release(*objs):
     gc.collect()
     torch.cuda.empty_cache()
 
-
 def load_model(model_class, model_path, device, **model_args):
-    checkpoint = torch.load(model_path, map_location=device)
+    checkpoint = torch.load(model_path)
+    epoch = checkpoint['epoch']
     model = model_class(**model_args).to(device)
-    model.load_state_dict(checkpoint, strict=False)
+    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
     model.eval()
-    return model
+    return model, epoch, checkpoint.get("best_temp"), checkpoint.get("best_alpha")
 
 def load_datasets(task, nb_samp, batch_size, nb_worker):
     # 加載數據集 (改為批量推理)
@@ -61,7 +63,7 @@ def load_datasets(task, nb_samp, batch_size, nb_worker):
     )
     return testDataLoader
 
-def inference_loop(args, model):
+def inference_loop(args, model, temp, alpha):
     testDataLoader = load_datasets(args.task, args.nb_samp, args.batch_size, args.nb_worker)
     score_loader = []
     label_loader = []
@@ -75,7 +77,7 @@ def inference_loop(args, model):
         labels = labels.to(args.device)
         # 模型推理 (批量)
         with torch.no_grad():
-            logits, routing, fused_output, time_pooled_feat = model(wave=wave)
+            logits, routing, fused_output, time_pooled_feat = model(wave=wave, temp=temp, alpha=alpha)
             scores = softmax(logits, dim=1)[:, 1]
 
         score_loader.extend(scores.detach().cpu().numpy().tolist())
@@ -93,24 +95,28 @@ def inference(args, model_path, save_path):
     )
     processor = Wav2Vec2FeatureExtractor.from_pretrained(args.wav2vec_path)
     model = None
+    onnx_session = None
+    temp = args.router_temperature
+    alpha = args.router_alpha
     try:
         onnx_session = ort.InferenceSession(args.onnx_path, providers=["CUDAExecutionProvider"])
         model_args = {
             'encoder_dim': args.encoder_dim,
             'num_experts': args.num_experts,
             'num_classes': args.num_classes,
-            'router_temperature': args.router_temperature,
+            'max_temp': args.max_temp,
+            'min_temp': args.min_temp,
+            'warmup_epochs': args.warmup_epochs,
             'processor': processor,
             'onnx_session': onnx_session,
         }
 
-        model = load_model(
+        model, epoch, _, _ = load_model(
             model_class=Detector,
             model_path=model_path,
             device=args.device,
             **model_args)
-
-        score_loader, label_loader, local_gating_loader, moe_feature_loader = inference_loop(args, model)
+        score_loader, label_loader, local_gating_loader, moe_feature_loader = inference_loop(args, model, temp, alpha)
     finally:
         safe_release(model, onnx_session)
 
@@ -124,9 +130,9 @@ def inference(args, model_path, save_path):
     # compute_eer(spoof, bonafide)
     eer, frr, far, threshold = compute_eer(target_scores, nontarget_scores)
     
-    print(f'Equal Error Rate (EER): {eer}, False Rejection Rate (FFR): {frr}, False Acceptance Rate (FAR): {far}, Threshold: {threshold}')
+    print(f'Equal Error Rate (EER): {eer}, False Rejection Rate (FFR): {frr}, False Acceptance Rate (FAR): {far}, Threshold: {threshold}, Temp: {temp}, Alpha: {alpha}, Epoch: {epoch}')
     with open(os.path.join(save_path, "inference.txt"), "a") as f:
-        f.write(f"Test sets: {args.task}, EER: {eer:.4f}, FFR: {frr:.4f}, FAR: {far:.4f}, Threshold: {threshold:.4f}\n")
+        f.write(f"Equal Error Rate (EER): {eer}, False Rejection Rate (FFR): {frr}, False Acceptance Rate (FAR): {far}, Threshold: {threshold}\n, Temp: {temp}, Alpha: {alpha}\n, Epoch: {epoch}\n")
 
     wandb.log({
         "Train set": args.model_name,
@@ -134,7 +140,10 @@ def inference(args, model_path, save_path):
         "EER": eer,
         "FFR": frr,
         "FAR": far,
-        "Threshold": threshold
+        "Threshold": threshold,
+        'temp': temp,
+        'alpha': alpha,
+        "epoch": epoch,
     })
 
 
@@ -163,8 +172,8 @@ def log_selected_plots(plot_dir, task=None, prefix=True):
         wandb.log(log_dict)
 
 def main(args):
-    model_path = os.path.join(args.model_folder, args.model_name, 'best_model.pth')
-    save_path = os.path.join(args.log_path, args.model_name)
+    model_path = os.path.join(args.model_folder, args.model_name, args.checkpt_name)
+    save_path = os.path.join(args.log_path, args.model_name, args.checkpt_name)
     os.makedirs(save_path, exist_ok=True)
     scores, labels, local_gating_loader, moe_feature_loader = inference(args, model_path, save_path)
 
@@ -172,13 +181,16 @@ def main(args):
     os.makedirs(plot_dir, exist_ok=True)
 
     # === 視覺化 ===
+    draw_norm(moe_feature_loader, labels, args.task, plot_dir)
+    draw_spherical_feature_stats(moe_feature_loader, labels, args.task, plot_dir)
     draw_expert_usage(local_gating_loader, args.task, plot_dir)
     draw_ft_dist(moe_feature_loader, labels, args.task, plot_dir, label_names=["Bona fide", "Spoof"])
-    draw_roc_curve(scores, labels, args.task, plot_dir)
-    draw_confidence_histogram(scores, labels, args.task, plot_dir)
-    draw_score_kde(scores, labels, args.task, plot_dir)
-    draw_expert_heatmap(local_gating_loader, args.task, plot_dir)
-    log_selected_plots(plot_dir, task=args.task, prefix=True)
+    # draw_roc_curve(scores, labels, args.task, plot_dir)
+    # draw_confidence_histogram(scores, labels, args.task, plot_dir)
+    # draw_score_kde(scores, labels, args.task, plot_dir)
+    # draw_expert_heatmap(local_gating_loader, args.task, plot_dir)
+    # log_selected_plots(plot_dir, task=args.task, prefix=True)
+
     print(f"All visualizations saved in: {plot_dir}")
 
 if __name__ == "__main__":
