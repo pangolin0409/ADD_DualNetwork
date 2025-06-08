@@ -125,60 +125,68 @@ class WaveformAugmentor:
 ###########################################
 # Router 模組（包含 Data Augmentation）
 ###########################################
-class SigmoidRouter(nn.Module):
-    def __init__(self, input_dim, num_experts, hidden_dim=128, router_temperature=2.0):
-        super(SigmoidRouter, self).__init__()
+class LayerAwareRouter(nn.Module):
+    def __init__(self, input_dim, hidden_dim=128, router_temperature=2.0):
+        super().__init__()
+        self.temperature = router_temperature
+
+        # 可以用一個大的共享 MLP，也可以每層獨立 MLP（先做共享）
         self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.1)
-        self.fc2 = nn.Linear(hidden_dim, num_experts)
-        self.noise_linear = nn.Linear(input_dim, num_experts)
-        self.router_temperature = router_temperature
+        self.relu = nn.GELU()
+        self.dropout = nn.Dropout(0.1)
+        self.fc2 = nn.Linear(hidden_dim, 1)
         self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x, temp):
+    def forward(self, x, temp=None):
+        # x: [B, L, D]
         if temp is None:
-            temp = self.router_temperature
-        out = self.dropout(self.relu(self.fc1(x)))  # (batch, hidden_dim)
-        logits = self.fc2(out)  # (batch, num_experts)
-        noise_scale = F.softplus(self.noise_linear(x))  # 保證是正值
-        noise = torch.randn_like(logits) * noise_scale
-        logits = logits + noise
-        routing = self.sigmoid(logits / temp)
-        return routing
+            temp = self.temperature
 
+        B, L, D = x.shape
+        x = self.fc1(x)           # [B, L, hidden_dim]
+        x = self.relu(x)
+        x = self.dropout(x)
+        logits = self.fc2(x).squeeze(-1)  # [B, L]
+        scores = self.sigmoid(logits / temp)  # αₗ (soft routing weights)
+        return scores  # [B, L]
+
+class TimeAttentionPool(nn.Module):
+    def __init__(self, dim, heads=2):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=heads, batch_first=True, dropout=0.1)
+        # 使用 LayerNorm 來正規化輸入
+        self.norm = nn.LayerNorm(dim)
+
+    def forward(self, x):  # x: [B, T, D]
+        x_norm = self.norm(x)
+        attn_out, _ = self.attn(x_norm, x_norm, x_norm)  # contextualize over time
+        pooled = attn_out.mean(dim=1)  # [B, D]
+        return pooled
+    
 ###########################################
 # Classifier 模組
 ###########################################
 class Classifier(nn.Module):
-    def __init__(self, input_dim, num_classes):
+    def __init__(self, input_dim=512, num_classes=2):
         super(Classifier, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 256)
-        self.relu = nn.ReLU()
-        # self.dropout = nn.Dropout(p=0.2)  # 0.2~0.3 是較穩的值
-        self.fc2 = nn.Linear(256, num_classes)
+        self.fc1 = nn.Linear(input_dim, input_dim//2)
+        self.act1 = nn.GELU()
+        self.dropout1 = nn.Dropout(0.2)
+
+        self.fc2 = nn.Linear(input_dim//2, input_dim//4)
+        self.act2 = nn.GELU()
+        self.dropout2 = nn.Dropout(0.1)
+
+        self.fc3 = nn.Linear(input_dim//4, num_classes)
 
     def forward(self, x):
         x = self.fc1(x)
-        x = self.relu(x)
-        # x = self.dropout(x)
+        x = self.act1(x)
+        x = self.dropout1(x)
         x = self.fc2(x)
+        x = self.act2(x)
+        x = self.dropout2(x)
+        x = self.fc3(x)
         return x
-
-class CosineClassifier(nn.Module):
-    def __init__(self, input_dim, num_classes):
-        super().__init__()
-        self.weight = nn.Parameter(torch.randn(num_classes, input_dim))
-        nn.init.xavier_uniform_(self.weight)
-
-        self.scale = nn.Parameter(torch.tensor(30.0)) 
-
-    def forward(self, x):
-        x = F.normalize(x, dim=-1)                  # (B, D)
-        w = F.normalize(self.weight, dim=-1)        # (C, D)
-        cos_sim = torch.matmul(x, w.t())            # (B, C)
-
-        return self.scale * cos_sim                 # (B, C)
 
 ###########################################
 # Detector 模組：結合 SparseMoE 與 Classifier
@@ -190,25 +198,35 @@ class Detector(nn.Module):
         self.processor = processor
         self.session = onnx_session
 
+        self.shared_mlp =  nn.Sequential(
+                nn.LayerNorm(encoder_dim),
+                nn.Linear(encoder_dim, encoder_dim // 2),
+                nn.GELU(),
+                nn.Dropout(0.1),
+                nn.Linear(encoder_dim // 2, encoder_dim // 2)
+        )
+        self.groups = 4
+        self.mlp_alpha = nn.Parameter(torch.ones(self.num_experts))  # 24 層
         # 一個大MLP處理所有層
         self.mlps = nn.ModuleList([
             nn.Sequential(
+                nn.LayerNorm(encoder_dim),
                 nn.Linear(encoder_dim, encoder_dim // 2),
-                nn.ReLU(),
+                nn.GELU(),
+                nn.Dropout(0.1),
                 nn.Linear(encoder_dim // 2, encoder_dim // 2)
-            ) for _ in range(24)
+            ) for _ in range(self.groups)
         ])
 
         # Attention pooling也是一個大的Linear
-        self.attn_score = nn.Linear(encoder_dim//2, 1)
-
+        self.time_attn_pool = TimeAttentionPool(encoder_dim // 2, heads=2)
         # Router
-        self.router = SigmoidRouter((encoder_dim*num_experts)//2, num_experts, router_temperature=max_temp)
-
+        self.router = LayerAwareRouter(encoder_dim // 2, router_temperature=max_temp)
         self.max_temp = max_temp
         self.min_temp = min_temp
         self.warmup_epochs = warmup_epochs
-        self.pre_norm = nn.LayerNorm(encoder_dim//2)
+        self.post_norm = nn.LayerNorm(encoder_dim//2)
+        self.post_norm_final = nn.LayerNorm(encoder_dim//2)
         self.classifier = Classifier(input_dim=encoder_dim//2, num_classes=num_classes)
 
     def forward(self, wave, epoch=5, temp=None, alpha=None):
@@ -219,31 +237,45 @@ class Detector(nn.Module):
         layer_outputs = all_hidden_states[:, 1:]  # [B, 24, T, D]
         B, L, T, D = layer_outputs.shape
 
-        # -- MLP處理
         out = []
-        for i, mlp in enumerate(self.mlps):
-            out.append(mlp(layer_outputs[:, i]))  # x: [B, 24, T, D] → x[:, i]: [B, T, D]
-        x = torch.stack(out, dim=1)  # [B, 24, T, D']
+        grouped_mlp_outputs = []
+        shared_mlp_outputs = []
+        group_size = L // self.groups
 
-        # -- Attention Pooling
-        score = self.attn_score(x)  # (B, 24, T, 1)
-        weight = torch.softmax(score, dim=2)  # (B, 24, T, 1)
-        pooled = (x * weight).sum(dim=2)  # (B, 24, expert_dim)
+        for i in range(self.num_experts):
+            group_idx = i // group_size
+            shared_mlp_output = self.shared_mlp(layer_outputs[:, i])  # [B, T, D']
+            group_mlp_output = self.mlps[group_idx](layer_outputs[:, i])  # [B, T, D']
+            weighted_mlp_output = shared_mlp_output + self.mlp_alpha[i] * group_mlp_output  # [B, T, D']
+            grouped_mlp_outputs.append(weighted_mlp_output)
+            shared_mlp_outputs.append(shared_mlp_output)
+            # Time pooling
+            time_pooled = self.time_attn_pool(weighted_mlp_output)  # [B, D']
+            out.append(time_pooled)
 
-        # -- Router
-        router_input = pooled.reshape(B, -1)  # (B, 24*expert_dim)
-
-        uniform = torch.ones(B, self.num_experts, device=pooled.device) / self.num_experts
-        learned = self.router(router_input, temp)  # (B, num_experts)
+        linear_outputs = torch.stack(grouped_mlp_outputs, dim=1)  # [B, 24, T, D']
+        shared_mlp_outputs = torch.stack(shared_mlp_outputs, dim=1)  # [B, 24, T, D']
+        time_pooled = torch.stack(out, dim=1)  # [B, 24, D']
+        
+        # --- Branch 1: Layer-Aware Router ---
+        uniform = torch.ones(B, self.num_experts, device=time_pooled.device) / self.num_experts
+        learned = self.router(time_pooled, temp)  # [B, 24]
         routing_weights = alpha * learned + (1 - alpha) * uniform
+        layer_fusion_feat = (linear_outputs * routing_weights.unsqueeze(-1).unsqueeze(-1)).sum(dim=1) # [B, T, D']
+        layer_fusion_feat = self.post_norm(layer_fusion_feat)
+        layer_fusion_feat = layer_fusion_feat.mean(dim=1)  # [B, D']
 
-        # -- Fusion
-        fused = (pooled * routing_weights.unsqueeze(-1)).sum(dim=1)  # (B, expert_dim)
+        # --- Branch 2: Time Context Pooling ---
+        shared_mlp_outputs = shared_mlp_outputs.mean(dim=1)  # [B, T, D']
+        time_context_feat = self.time_attn_pool(shared_mlp_outputs)  # [B, D']
 
-        fused = self.pre_norm(fused)
-        logits = self.classifier(fused)
+        layer_fusion_feat = self.post_norm_final(layer_fusion_feat)
+        time_context_feat = self.post_norm_final(time_context_feat)
 
-        return logits, routing_weights, fused, pooled
+        fused_all = layer_fusion_feat + time_context_feat  # [B, D']
+        logits = self.classifier(fused_all)
+
+        return logits, routing_weights, fused_all, time_pooled
 
     def temp_schedule(self, epoch, temp=None):
         if temp is not None:
@@ -290,30 +322,6 @@ class Detector(nn.Module):
             torch.device("cuda" if torch.cuda.is_available() else "cpu")
         )
     
-    # def extract_features_from_onnx(self, waveform):
-    #     """
-    #     使用 ONNX 將 raw waveform 轉成 hidden states (25 layers)
-    #     - waveform: (B, T) 的 torch.Tensor，已經正規化過的 audio 資料
-    #     """
-    #     if isinstance(waveform, torch.Tensor):
-    #         waveform = waveform.cpu().numpy()
-        
-    #     input_values = waveform.astype(np.float16)
-    #     attention_mask = np.ones_like(input_values, dtype=np.int64)  # 全部都是有效 token
-
-    #     # ONNX forward
-    #     outputs = self.session.run(None, {
-    #         "input_values": input_values,
-    #         "attention_mask": attention_mask
-    #     })
-
-    #     # (25, B, T, D) → (B, 25, T, D)
-    #     all_hidden_states = np.array(outputs[1])
-    #     all_hidden_states = np.transpose(all_hidden_states, (1, 0, 2, 3))
-
-    #     return torch.tensor(all_hidden_states, dtype=torch.float32).to(
-    #         torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    #     )
     def compute_limp_loss(self, routing_weights):
         # routing_weights: [batch, num_experts]
         # 計算單個樣本 routing variance

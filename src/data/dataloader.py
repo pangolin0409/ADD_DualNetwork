@@ -3,7 +3,7 @@ import soundfile as sf
 import os
 from torch.utils import data
 import pandas as pd
-
+import librosa
 class RawAudio(data.Dataset):
     def __init__(self, path_to_database, meta_csv, nb_samp = 0, cut = True, return_label = True, norm_scale = True, part='train'):
         super(RawAudio, self).__init__()
@@ -28,7 +28,9 @@ class RawAudio(data.Dataset):
         filepath = os.path.join(self.path_to_audio, self.part, 'audio', file)
         
         try:
-            X, _ = sf.read(filepath) 
+            X, _ = sf.read(filepath)
+            # if self.part == 'train':
+            #     X, indx = librosa.effects.trim(X, top_db=40)
             X = X.astype(np.float64)
         except:
             raise ValueError('%s'%filepath)

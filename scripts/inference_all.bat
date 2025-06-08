@@ -1,6 +1,6 @@
 @echo off
 call conda activate audio
-set MODEL=DATA_AUG_ASV2019
+set MODEL=LAYER_TIME_DAUL_BRANCH
 
 python main.py --experiment train --model_name "%MODEL%"
 

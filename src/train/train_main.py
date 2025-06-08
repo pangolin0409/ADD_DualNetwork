@@ -69,6 +69,14 @@ def sample_to_prototype_contrastive_loss(pooled, labels, prototypes, routing_wei
 
     return weighted_loss
 
+def rdrop_loss(logits1, logits2):
+    # logits1 / logits2: shape [B, C] (兩次 forward 的輸出)
+    p1 = F.log_softmax(logits1, dim=-1)
+    p2 = F.softmax(logits2, dim=-1)
+    kl_1 = F.kl_div(p1, p2, reduction='batchmean')
+    kl_2 = F.kl_div(F.log_softmax(logits2, dim=-1), F.softmax(logits1, dim=-1), reduction='batchmean')
+    return kl_1 + kl_2
+
 
 ###########################################
 # 訓練程式碼
@@ -115,35 +123,35 @@ def train_loop(args, model, device):
         total_loss = 0.0
         total_samples = 0
         correct = 0
-        augmentor.update(epoch)  # 更新 waveform augmentation 的參數
+        # augmentor.update(epoch)  # 更新 waveform augmentation 的參數
         for batch_idx, (wave, label) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
             label = label.to(device)
             wave = wave.to(device)
-            fake_wave = wave[label == 1]  # 假人聲
-            real_wave = wave[label == 0]  # 真人聲
-            fake_wave = augmentor(fake_wave)  # 只對假人聲進行增強
-            wave = torch.cat([real_wave, fake_wave], dim=0)  # 合併增強後的假人聲與真人聲
-            label = torch.cat([label[label == 0], label[label == 1]], dim=0)
+            # fake_wave = wave[label == 1]  # 假人聲
+            # real_wave = wave[label == 0]  # 真人聲
+            # fake_wave = augmentor(fake_wave)  # 只對假人聲進行增強
+            # wave = torch.cat([real_wave, fake_wave], dim=0)  # 合併增強後的假人聲與真人聲
+            # label = torch.cat([label[label == 0], label[label == 1]], dim=0)
 
             optimizer.zero_grad()
 
-            logits, routing, fused_output, time_pooled_feat = model(wave=wave, epoch=epoch)
+            logits1, routing, fused_output, time_pooled_feat = model(wave=wave, epoch=epoch)
+            # logits2 = model.classifier(fused_output)  # MoE 的輸出
 
             # CrossEntropy Loss (分類 loss)
-            loss_ce = ce_loss_fn(logits, label)
+            loss_ce = (ce_loss_fn(logits1, label))
+            # loss_rdrop = rdrop_loss(logits1, logits2)
 
             # MoE 正則化：load balance 與 limp loss
             loss_limp = model.compute_limp_loss(routing)
             loss_load = model.compute_load_balance_loss(routing)
             loss_entropy = model.compute_entropy_loss(routing)
-            loss_router_supervised_loss = model.compute_router_supervised_loss(routing, logits, label)
 
             # 組合總 loss
             total_batch_loss = (args.lambda_ce * loss_ce + 
                                 args.lambda_limp * loss_limp +
                                 args.lambda_load * loss_load +
-                                args.lambda_entropy * loss_entropy+
-                                args.lambda_router_supervised * loss_router_supervised_loss)
+                                args.lambda_entropy * loss_entropy)
 
             if torch.isnan(total_batch_loss):
                 send_discord("⚠️ NaN detected in total loss", webhook)
@@ -154,7 +162,7 @@ def train_loop(args, model, device):
 
             total_loss += total_batch_loss.item() * label.size(0)
             total_samples += label.size(0)
-            preds = torch.argmax(logits, dim=1)
+            preds = torch.argmax(logits1, dim=1)
             correct += (preds == label).sum().item()
 
         avg_loss = total_loss / total_samples
@@ -218,8 +226,7 @@ def train_loop(args, model, device):
             "loss/ce": loss_ce.item(),
             "loss/loss_limp": loss_limp.item(),     
             "loss/loss_load": loss_load.item(),
-            "loss/loss_entropy": loss_entropy.item(),
-            "loss/loss_router_supervised": loss_router_supervised_loss.item(),
+            "loss/loss_entropy": loss_entropy.item()
         })
 
     return best_eer

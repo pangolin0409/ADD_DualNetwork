@@ -12,7 +12,7 @@ train:
   layer_select_model_name: "LS_ASV019"
   nb_samp: 64600
   weight_decay: 0.0001
-  batch_size: 128
+  batch_size: 32
   lr: 0.0001
   num_epochs: 6
   nb_worker: 8
@@ -50,6 +50,7 @@ loss:
   lambda_unknown: 0.0
   lambda_entropy: 0.0
   lambda_proto: 0.0
+  lambda_rdrop: 1.0
 
 paths:
   aasist_config_path: "./config/AASIST.conf"
