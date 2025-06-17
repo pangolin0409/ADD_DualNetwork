@@ -6,16 +6,17 @@ import random
 """
     載入訓練和驗證數據集。
 """
-def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fake_ratio, part, is_downsample=False):
+def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fake_ratio, part, is_downsample=False, args=None):
     # 初始化 datasets 和 dataloaders
     data_sets = {}
     for dataset_name in dataset_names:
         data_sets[dataset_name] = RawAudio(
-            path_to_database=f'E:/datasets/{dataset_name}',
+            path_to_database=f'F:/datasets/{dataset_name}',
             meta_csv='meta.csv',
             return_label=True,
             nb_samp=sample_rate,
-            part=part
+            part=part,
+            args=args
         )
     
     data_set_list = []
@@ -23,9 +24,9 @@ def load_datasets(sample_rate, batch_size, dataset_names, worker_size, target_fa
         # 如果是下採樣模式，則進行下採樣
         if is_downsample:
             print(f"Processing dataset : {name}")
-            real_indices, spoof_indices = downsample_data(meta_path=f'E:/datasets/{name}/{part}/meta.csv', dataset_name=name, target_fake_ratio=target_fake_ratio)
+            real_indices, spoof_indices = downsample_data(meta_path=f'F:/datasets/{name}/{part}/meta.csv', dataset_name=name, target_fake_ratio=target_fake_ratio)
         else:
-            meta = pd.read_csv(f'E:/datasets/{name}/{part}/meta.csv')
+            meta = pd.read_csv(f'F:/datasets/{name}/{part}/meta.csv')
             real_indices = meta[meta['label'] == 'bonafide'].index.tolist()
             spoof_indices = meta[meta['label'] == 'spoof'].index.tolist()
                 
@@ -58,17 +59,19 @@ def downsample_data(meta_path: str, dataset_name: str, target_fake_ratio: int = 
 def stratified_spoof_sampling(meta: pd.DataFrame, total_target_count: int) -> list:
     sampled_indices = []
     meta = meta[meta["label"] == "spoof"].copy()
-    spoof_types = meta["file_id"].dropna().unique()
-    per_type_count = total_target_count // len(spoof_types)
 
-    # 確保總數不超標的同時，類型平均
-    for stype in spoof_types:
-        sub_df = meta[meta["file_id"] == stype]
-        if len(sub_df) >= per_type_count:
-            sampled = sub_df.sample(per_type_count, random_state=42)
-        else:
-            sampled = sub_df
-        sampled_indices.extend(sampled.index.tolist())
+    if "file_id" in meta.columns:
+        spoof_types = meta["file_id"].dropna().unique()
+        per_type_count = total_target_count // len(spoof_types)
+
+        # 確保總數不超標的同時，類型平均
+        for stype in spoof_types:
+            sub_df = meta[meta["file_id"] == stype]
+            if len(sub_df) >= per_type_count:
+                sampled = sub_df.sample(per_type_count, random_state=42)
+            else:
+                sampled = sub_df
+            sampled_indices.extend(sampled.index.tolist())
 
     # 若總數還不足，從剩餘未選的 spoof 中補足
     if len(sampled_indices) < total_target_count:

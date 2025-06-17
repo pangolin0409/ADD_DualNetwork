@@ -8,23 +8,17 @@ from tqdm import tqdm
 import numpy as np
 import onnxruntime as ort
 from transformers import Wav2Vec2FeatureExtractor
-from src.utils.eval_metrics import compute_eer
+from src.utils.eval_metrics import compute_eer, calculate_metrics
 from src.data.dataloader import RawAudio
 from src.models.Detector import Detector
 from src.utils.common_utils import get_git_branch
 from src.utils.visualize import (
     draw_expert_usage,
     draw_ft_dist,
-    draw_roc_curve,
-    draw_confidence_histogram,
-    draw_score_kde,
-    draw_expert_heatmap,
-    draw_norm,
-    draw_spherical_feature_stats,
-    draw_ft_direction,
+    draw_roc_curve
 )
 import torch.nn as nn
-
+import pandas as pd
 def safe_release(*objs):
     for obj in objs:
         if obj is not None:
@@ -46,7 +40,7 @@ def load_datasets(task, nb_samp, batch_size, nb_worker):
     # 加載數據集 (改為批量推理)
     print(f"Loading dataset: {task}")
     test_set = RawAudio(
-        path_to_database=f'E:/datasets/{task}',
+        path_to_database=f'F:/datasets/{task}',
         meta_csv='meta.csv',
         return_label=True,
         nb_samp= nb_samp,
@@ -69,10 +63,10 @@ def inference_loop(args, model, temp, alpha):
     label_loader = []
     local_gating_loader = []
     moe_feature_loader = []
-
+    filename_loader = []
     # 遍歷測試數據
     for i, data_slice in enumerate(tqdm(testDataLoader)):
-        wave, labels = data_slice
+        wave, labels, filename = data_slice
         wave = wave.to(args.device)
         labels = labels.to(args.device)
         # 模型推理 (批量)
@@ -84,8 +78,9 @@ def inference_loop(args, model, temp, alpha):
         label_loader.extend(labels.detach().cpu().numpy().tolist())
         moe_feature_loader.extend(fused_output.detach().cpu().numpy().tolist())
         local_gating_loader.extend(routing.detach().cpu().numpy().tolist())
+        filename_loader.extend(filename)
     
-    return score_loader, label_loader, local_gating_loader, moe_feature_loader
+    return score_loader, label_loader, local_gating_loader, moe_feature_loader, filename_loader
 
 def inference(args, model_path, save_path):
     wandb.init(
@@ -96,8 +91,6 @@ def inference(args, model_path, save_path):
     processor = Wav2Vec2FeatureExtractor.from_pretrained(args.wav2vec_path)
     model = None
     onnx_session = None
-    temp = args.router_temperature
-    alpha = args.router_alpha
     try:
         onnx_session = ort.InferenceSession(args.onnx_path, providers=["CUDAExecutionProvider"])
         model_args = {
@@ -111,28 +104,57 @@ def inference(args, model_path, save_path):
             'onnx_session': onnx_session,
         }
 
-        model, epoch, _, _ = load_model(
+        model, epoch, temp, alpha = load_model(
             model_class=Detector,
             model_path=model_path,
             device=args.device,
             **model_args)
-        score_loader, label_loader, local_gating_loader, moe_feature_loader = inference_loop(args, model, temp, alpha)
+        score_loader, label_loader, local_gating_loader, moe_feature_loader, filename_loader = inference_loop(args, model, temp, alpha)
     finally:
         safe_release(model, onnx_session)
 
     scores = np.array(score_loader)
     labels = np.array(label_loader)
+    filenames = np.array(filename_loader)
 
     # 根據標籤分割分數
     nontarget_scores = scores[labels == 0]  # 負例 (bonafide)
     target_scores = scores[labels == 1]     # 正例 (spoof)
+    
 
     # compute_eer(spoof, bonafide)
     eer, frr, far, threshold = compute_eer(target_scores, nontarget_scores)
+    # 計算其他評估指標
+    precision, recall, f1, cm = calculate_metrics(scores, labels, threshold)
     
     print(f'Equal Error Rate (EER): {eer}, False Rejection Rate (FFR): {frr}, False Acceptance Rate (FAR): {far}, Threshold: {threshold}, Temp: {temp}, Alpha: {alpha}, Epoch: {epoch}')
+    print(f'Precision: {precision}, Recall: {recall}, F1 Score: {f1}')
+    print(f'Confusion Matrix:\n{cm}')
     with open(os.path.join(save_path, "inference.txt"), "a") as f:
-        f.write(f"Equal Error Rate (EER): {eer}, False Rejection Rate (FFR): {frr}, False Acceptance Rate (FAR): {far}, Threshold: {threshold}\n, Temp: {temp}, Alpha: {alpha}\n, Epoch: {epoch}\n")
+        f.write(f"Test set: {args.task}, Equal Error Rate (EER): {eer}, False Rejection Rate (FFR): {frr}, False Acceptance Rate (FAR): {far}, Threshold: {threshold}\n, Temp: {temp}, Alpha: {alpha}\n, Epoch: {epoch}\n")
+        f.write(f"Precision: {precision}, Recall: {recall}, F1 Score: {f1}\n")
+        f.write(f"Confusion Matrix:\n{cm}\n")
+
+    preds = (scores >= threshold).astype(int)
+    # 組成 DataFrame
+    df = pd.DataFrame({
+        'filename': filenames,
+        'label': labels,
+        'score': scores,
+        'pred': preds
+    })
+
+    # 篩選誤判樣本
+    fp_df = df[(df['label'] == 0) & (df['pred'] == 1)]  # False Positive
+    fn_df = df[(df['label'] == 1) & (df['pred'] == 0)]  # False Negative
+
+    # 合併錯誤樣本並加入錯誤類型欄位
+    fp_df['error_type'] = 'FP'
+    fn_df['error_type'] = 'FN'
+    error_df = pd.concat([fp_df, fn_df], ignore_index=True)
+
+    # 儲存為 CSV
+    error_df.to_csv(os.path.join(save_path, f"misclassified_files_on_{args.task}.csv"), index=False)
 
     wandb.log({
         "Train set": args.model_name,
@@ -141,6 +163,9 @@ def inference(args, model_path, save_path):
         "FFR": frr,
         "FAR": far,
         "Threshold": threshold,
+        'precision': precision,
+        'recall': recall,
+        'f1_score': f1,
         'temp': temp,
         'alpha': alpha,
         "epoch": epoch,
@@ -181,15 +206,9 @@ def main(args):
     os.makedirs(plot_dir, exist_ok=True)
 
     # === 視覺化 ===
-    draw_norm(moe_feature_loader, labels, args.task, plot_dir)
-    draw_spherical_feature_stats(moe_feature_loader, labels, args.task, plot_dir)
     draw_expert_usage(local_gating_loader, args.task, plot_dir)
     draw_ft_dist(moe_feature_loader, labels, args.task, plot_dir, label_names=["Bona fide", "Spoof"])
-    # draw_roc_curve(scores, labels, args.task, plot_dir)
-    # draw_confidence_histogram(scores, labels, args.task, plot_dir)
-    # draw_score_kde(scores, labels, args.task, plot_dir)
-    # draw_expert_heatmap(local_gating_loader, args.task, plot_dir)
-    # log_selected_plots(plot_dir, task=args.task, prefix=True)
+    draw_roc_curve(scores, labels, args.task, plot_dir)
 
     print(f"All visualizations saved in: {plot_dir}")
 

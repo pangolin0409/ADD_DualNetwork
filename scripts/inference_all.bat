@@ -1,10 +1,11 @@
 @echo off
 call conda activate audio
-set MODEL=LAYER_TIME_DAUL_BRANCH
+set MODEL=LAYER_TIME_DAUL_BRANCH_DA
 
 python main.py --experiment train --model_name "%MODEL%"
 
-set TASKS="in_the_wild" "ASVspoof2021_DF" "SOTA" "Asvspoof2019_LA" 
+set TASKS="en-fbgkx-librispeech-2025_v1" "in_the_wild" "ASVspoof2021_DF" "ADD" "zh-fbgkx-aishell3-2025_v1"
+@REM set TASKS="ADD" "zh-fbgkx-aishell3-2025_v1" "Asvspoof2019_LA" 
 
 for %%T in (%TASKS%) do (
     echo Running task: %%~T

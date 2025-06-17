@@ -9,12 +9,12 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR, StepLR, SequentialLR
 from transformers import Wav2Vec2FeatureExtractor
 import onnxruntime as ort
-from src.models.Detector import Detector, WaveformAugmentor
+from src.models.Detector import Detector
 from src.data.load_datasets import load_datasets
-from src.utils.eval_metrics import compute_eer
+from src.utils.eval_metrics import compute_eer, calculate_metrics
 import wandb
 from src.utils.common_utils import get_git_branch, send_discord
-from src.utils.DatasetUtils import manipulations
+
 # 把所有「隨機」都固定下來，讓每次訓練結果都一樣
 # 可重現實驗結果
 def set_seed(seed: int):
@@ -34,51 +34,6 @@ def safe_release(*objs):
     torch.cuda.empty_cache()
 
 ###########################################
-# Contrastive Loss 計算
-###########################################
-def prototype_to_prototype_loss(prototypes, temperature=0.1):
-    L = prototypes.size(0)
-    p0 = F.normalize(prototypes[:, 0, :], dim=-1)  # bona fide: [L, D]
-    p1 = F.normalize(prototypes[:, 1, :], dim=-1)  # spoof:     [L, D]
-
-    sim = (p0 * p1).sum(dim=-1) / temperature  # [L] cosine similarity
-
-    # 我們希望它們「越不像越好」→ 目標是 0 → 使用 MSE loss against 0
-    loss = F.mse_loss(sim, torch.zeros_like(sim))
-
-    return loss
-
-def sample_to_prototype_contrastive_loss(pooled, labels, prototypes, routing_weights, temperature=0.07):
-    B, L, D = pooled.shape
-
-    pooled_flat = pooled.view(B * L, D)
-    labels_flat = labels.unsqueeze(1).expand(B, L).reshape(-1)
-    expert_ids = torch.arange(L, device=pooled.device).repeat(B)
-    routing_flat = routing_weights.reshape(-1)
-
-    features = F.normalize(pooled_flat, dim=-1)
-    proto = F.normalize(prototypes[expert_ids, labels_flat], dim=-1)
-    sim = (features * proto).sum(dim=-1)  # [B * L]
-
-    eps = 1e-6
-    log_sim = torch.log((sim / temperature).clamp(min=eps))  # avoid log(0)
-    layer_losses = -log_sim
-
-    denom = routing_flat.sum().clamp(min=eps)
-    weighted_loss = (layer_losses * routing_flat).sum() / denom
-
-    return weighted_loss
-
-def rdrop_loss(logits1, logits2):
-    # logits1 / logits2: shape [B, C] (兩次 forward 的輸出)
-    p1 = F.log_softmax(logits1, dim=-1)
-    p2 = F.softmax(logits2, dim=-1)
-    kl_1 = F.kl_div(p1, p2, reduction='batchmean')
-    kl_2 = F.kl_div(F.log_softmax(logits2, dim=-1), F.softmax(logits1, dim=-1), reduction='batchmean')
-    return kl_1 + kl_2
-
-
-###########################################
 # 訓練程式碼
 ###########################################
 
@@ -92,26 +47,13 @@ def train_loop(args, model, device):
     scheduler_step = StepLR(optimizer, step_size=5, gamma=0.7)
     scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_step], milestones=[warmup_epochs])
     
-    train_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.datasets
-    , worker_size=args.nb_worker, target_fake_ratio=1, part='train', is_downsample=False)
-    val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.datasets
+    train_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.train_datasets
+    , worker_size=args.nb_worker, target_fake_ratio=1, part='train', is_downsample=False, args=args)
+    val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.valid_datasets
     , worker_size=args.nb_worker, target_fake_ratio=1, part='validation', is_downsample=False)
-    quick_val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.datasets
-    , worker_size=args.nb_worker, target_fake_ratio=1, part='validation', is_downsample=True)
+    quick_val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.valid_datasets
+    , worker_size=args.nb_worker, target_fake_ratio=3, part='validation', is_downsample=True)
 
-    selected_keys = args.selected_augs if hasattr(args, "selected_augs") else list(manipulations.keys())
-    selected_manipulations = {k: manipulations[k] for k in selected_keys if k in manipulations}
-    print(f"👉 Selected augmentations: {selected_keys}")
-    augmentor = WaveformAugmentor(
-        manipulation_pool=selected_manipulations,
-        activation_prob=args.aug_prob,
-        min_aug=1,
-        max_aug=2,
-        verbose=True,
-        target_len = args.nb_samp,
-    )
-    
-    # Loss 計算：主要包括 CrossEntropy、Contrastive Loss、Consistency Loss、MoE 正則化（load balance, limp）
     ce_loss_fn = nn.CrossEntropyLoss()
 
     best_eer = 999.0
@@ -123,35 +65,25 @@ def train_loop(args, model, device):
         total_loss = 0.0
         total_samples = 0
         correct = 0
-        # augmentor.update(epoch)  # 更新 waveform augmentation 的參數
-        for batch_idx, (wave, label) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
+        for batch_idx, (wave, label, _) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
             label = label.to(device)
             wave = wave.to(device)
-            # fake_wave = wave[label == 1]  # 假人聲
-            # real_wave = wave[label == 0]  # 真人聲
-            # fake_wave = augmentor(fake_wave)  # 只對假人聲進行增強
-            # wave = torch.cat([real_wave, fake_wave], dim=0)  # 合併增強後的假人聲與真人聲
-            # label = torch.cat([label[label == 0], label[label == 1]], dim=0)
 
             optimizer.zero_grad()
 
-            logits1, routing, fused_output, time_pooled_feat = model(wave=wave, epoch=epoch)
-            # logits2 = model.classifier(fused_output)  # MoE 的輸出
+            logits, routing, _, _ = model(wave=wave, epoch=epoch)
 
             # CrossEntropy Loss (分類 loss)
-            loss_ce = (ce_loss_fn(logits1, label))
-            # loss_rdrop = rdrop_loss(logits1, logits2)
+            loss_ce = ce_loss_fn(logits, label)
 
             # MoE 正則化：load balance 與 limp loss
             loss_limp = model.compute_limp_loss(routing)
             loss_load = model.compute_load_balance_loss(routing)
-            loss_entropy = model.compute_entropy_loss(routing)
 
             # 組合總 loss
             total_batch_loss = (args.lambda_ce * loss_ce + 
                                 args.lambda_limp * loss_limp +
-                                args.lambda_load * loss_load +
-                                args.lambda_entropy * loss_entropy)
+                                args.lambda_load * loss_load)
 
             if torch.isnan(total_batch_loss):
                 send_discord("⚠️ NaN detected in total loss", webhook)
@@ -162,7 +94,7 @@ def train_loop(args, model, device):
 
             total_loss += total_batch_loss.item() * label.size(0)
             total_samples += label.size(0)
-            preds = torch.argmax(logits1, dim=1)
+            preds = torch.argmax(logits, dim=1)
             correct += (preds == label).sum().item()
 
         avg_loss = total_loss / total_samples
@@ -174,41 +106,53 @@ def train_loop(args, model, device):
         print(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.5f}")
         
         # 驗證
-        eer, val_loss = validate(model, quick_val_loader, device, epoch, args.router_temperature, args.router_alpha)
-        # if epoch != 0 and epoch % 5 == 0:
-        #     eer, val_loss = validate(model, val_loader, device, epoch, args.router_temperature, args.router_alpha)
-        # else:
-        #     eer, val_loss = validate(model, quick_val_loader, device, epoch, args.router_temperature, args.router_alpha)
+        if epoch != 0 and epoch % 5 == 0:
+            eer, val_loss, precision, recall, f1, cm = validate(model, val_loader, device, epoch)
+        else:
+            eer, val_loss, precision, recall, f1, cm = validate(model, quick_val_loader, device, epoch)
+
         print(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}")
+        print(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
+        print(f"Confusion Matrix:\n{cm}")
 
         with open(os.path.join(args.log_path, args.model_name, "log.txt"), "a") as f:
             f.write(f"[Epoch {epoch}] Train Loss: {avg_loss:.4f}, Train Acc: {train_acc:.4f}\n")
             f.write(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.5f}\n")
             f.write(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}\n")
+            f.write(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
+            f.write(f"Confusion Matrix:\n{cm}\n\n")
+            f.write(f"Current Temp: {model.temp_schedule(epoch):.4f}, Current Alpha: {model.blend_schedule(epoch):.4f}\n\n")
+            f.write(f"focal_gamma: {args.focal_gamma}, focal_alpha: {args.focal_alpha}\n\n")
 
         # Save checkpoint
         model_path = os.path.join(args.save_path, args.model_name, f"checkpt_epoch_{epoch}.pth")
         best_model_path = os.path.join(args.save_path, args.model_name, "best_model.pth")
+
+        # 在訓練 loop 裡，每次都記錄這輪 temp/alpha
+        curr_temp = model.temp_schedule(epoch)
+        curr_alpha = model.blend_schedule(epoch)
         torch.save({
                 'model_state_dict': model.state_dict(),
-                'best_temp': args.router_temperature,
-                'best_alpha': args.router_alpha,
+                'best_temp': curr_temp,
+                'best_alpha': curr_alpha,
                 'epoch': epoch,
             }, model_path)
-        if eer < best_eer:
-            best_eer = eer
+        
+        updated_best = False
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            updated_best = True
             torch.save({
                 'model_state_dict': model.state_dict(),
-                'best_temp': args.router_temperature,
-                'best_alpha': args.router_alpha,
+                'best_temp': curr_temp,
+                'best_alpha': curr_alpha,
                 'epoch': epoch,
             }, best_model_path)
             send_discord(f"✨ 新最佳模型：{args.model_name} | EER: {eer:.4f}", webhook)
             print("=> Best model updated.")
 
         # Early stopping
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if updated_best:
             patience_counter = 0
         else:
             patience_counter += 1
@@ -226,7 +170,8 @@ def train_loop(args, model, device):
             "loss/ce": loss_ce.item(),
             "loss/loss_limp": loss_limp.item(),     
             "loss/loss_load": loss_load.item(),
-            "loss/loss_entropy": loss_entropy.item()
+            "wce_weight_0": args.wce_weight_0,
+            "wce_weight_1": args.wce_weight_1,
         })
 
     return best_eer
@@ -262,7 +207,7 @@ def train_model(args):
 ###########################################
 # 驗證函數（包含 EER 計算）
 ###########################################
-def validate(model, val_loader, device, epoch, router_temperature, router_alpha):
+def validate(model, val_loader, device, epoch):
     model.eval()
     total_loss = 0.0
     total_samples = 0
@@ -271,10 +216,10 @@ def validate(model, val_loader, device, epoch, router_temperature, router_alpha)
     label_list = []
     
     with torch.no_grad():
-        for (wave, label) in tqdm(val_loader, desc="Validation"):
+        for (wave, label, _) in tqdm(val_loader, desc="Validation"):
             label = label.to(device)
             wave = wave.to(device)
-            logits, routing, fused_output, time_pooled_feat = model(wave=wave, epoch=epoch)
+            logits, _, _, _ = model(wave=wave, epoch=epoch)
             loss = ce_loss_fn(logits, label)
             total_loss += loss.item() * label.size(0)
             total_samples += label.size(0)
@@ -286,9 +231,10 @@ def validate(model, val_loader, device, epoch, router_temperature, router_alpha)
     avg_loss = total_loss / total_samples
     scores = torch.cat(score_list, 0).cpu().numpy()
     labels = torch.cat(label_list, 0).cpu().numpy()
-    # compute_eer() 是你已有的函數
+    
     eer, frr, far, threshold = compute_eer(scores[labels == 1], scores[labels == 0])
-    return eer, avg_loss
+    precision, recall, f1, cm = calculate_metrics(scores[labels == 1], scores[labels == 0], threshold)
+    return eer, avg_loss, precision, recall, f1, cm
 
 def main(args):
     train_model(args)

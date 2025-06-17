@@ -2,55 +2,59 @@ model:
   seed: 42
   encoder_dim: 1024
   num_experts: 24
-  select_k: 5
-  top_k: 2
   expert_dim: 128
   num_classes: 2
 
 train:
   model_name: "DSD_ASV019"
-  layer_select_model_name: "LS_ASV019"
   nb_samp: 64600
   weight_decay: 0.0001
   batch_size: 32
   lr: 0.0001
   num_epochs: 6
   nb_worker: 8
-  patience: 5
-  warmup_epochs: 10
-  enable_contrastive_epoch: 5
-  consistency_warmup: 5
+  patience: 7
+  warmup_epochs: 5
   aug_prob: 0.5
-  aug_method: "additive_noise"
-  unknown_cluster_interval: 5
   max_temp: 2.5
   min_temp: 1.75
   router_alpha: 0.55
   router_temperature: 1.75
-  k_bonafide: 5
-  k_spoof: 10
-  momentum: 0.1
-  sample_to_temperature: 0.07
-  expert_dropout_prob: 0.3
-  datasets: ["Asvspoof2019_LA"]
+  train_datasets: ["Asvspoof2019_LA"]
+  valid_datasets: ["Asvspoof2021_DF", "in_the_wild"]
   aug_group: "basic_noise"
+  focal_gamma: 3.0
+  focal_alpha: 0.7
+  wce_weight_0: 0.5
+  wce_weight_1: 1.5
+
+rawboost:
+  nBands: 5
+  minF: 20
+  maxF: 8000
+  minBW: 100
+  maxBW: 1000
+  minCoeff: 10
+  maxCoeff: 100
+  minG: 0
+  maxG: 0
+  minBiasLinNonLin: 5
+  maxBiasLinNonLin: 20
+  N_f: 5
+  P: 10
+  g_sd: 2
+  SNRmin: 10
+  SNRmax: 40
 
 inference:
   task: "in_the_wild"
-  upload_plots: true
+  upload_plots: false
 
 loss:
   lambda_ce: 1.0
-  lambda_contrastive: 0.0
-  lambda_consistency: 0.0
   lambda_limp: 0.3
   lambda_load: 1.0
-  lambda_entropy: 0.1
-  lambda_router_supervised: 0.1
-  lambda_unknown: 0.0
   lambda_entropy: 0.0
-  lambda_proto: 0.0
-  lambda_rdrop: 1.0
 
 paths:
   aasist_config_path: "./config/AASIST.conf"
@@ -59,11 +63,11 @@ paths:
   log_path: "./logs"
   plot_path: "./plot"
   wav2vec_path: "./pretrained_models/wav2vec2-xls-r-300m"
-  onnx_path: "./onnx_models/xlsr_base_fp16.onnx"
-  checkpt_name: 'best_model.pth'
+  onnx_path: "./onnx_models/xlsr_base.onnx"
+  checkpt_name: "best_model.pth"
 
 meta:
-  description: "Layer-Selection + DSD"
+  description: "Dual Branch"
   discord_webhook: "https://discord.com/api/webhooks/1363816820028739756/_k6XM40W5f4OaRN0RJqWweG-AP-8rQbLIcZ_7x4YzK0ZjqPus7fSV9L_ul19B2pwrP9D"
   secret_yml_path: "./config/secret.yml"
   project_name: "audio-deepfake-detection"

@@ -5,54 +5,7 @@ import numpy as np
 from sklearn.cluster import KMeans
 from typing import Dict, Optional
 import random
-class ExpertPrototypeBank:
-    def __init__(self, feature_dim, momentum=0.01, device='cuda'):
-        self.feature_dim = feature_dim
-        self.momentum = momentum
-        self.device = device
-        self.prototypes = torch.zeros(2, feature_dim, device=device)
-
-    def _compute_batch_proto(self, features, labels):
-        # features: [B, D], labels: [B]
-        proto_dict = {}
-        for class_id in [0, 1]:
-            mask = (labels == class_id)
-            if mask.sum() == 0:
-                continue
-            feats = features[mask]
-            proto_dict[class_id] = feats.mean(dim=0)  # [D]
-        return proto_dict
-
-    def initialize(self, features, labels):
-        proto_dict = self._compute_batch_proto(features, labels)
-        for class_id, proto in proto_dict.items():
-            self.prototypes[class_id] = proto
-
-    def update(self, features, labels):
-        proto_dict = self._compute_batch_proto(features, labels)
-        for class_id, new_proto in proto_dict.items():
-            self.prototypes[class_id] = (
-                (1 - self.momentum) * self.prototypes[class_id] +
-                self.momentum * new_proto
-            )
-
-    def get(self):
-        return self.prototypes
-
-class RoutingPreprocessor(nn.Module):
-    def __init__(self, input_dim, hidden_dim):
-        super().__init__()
-        self.norm = nn.LayerNorm(input_dim)
-        self.proj = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-        )
-
-    def forward(self, x):
-        x = self.norm(x)
-        x = self.proj(x)
-        return x
+import math
 
 class WaveformAugmentor:
     def __init__(self, manipulation_pool: Dict[str, Optional[torch.nn.Module]], 
@@ -279,14 +232,12 @@ class Detector(nn.Module):
 
     def temp_schedule(self, epoch, temp=None):
         if temp is not None:
-            if epoch >= 5:
-                return temp
+            return temp
         return self.max_temp - (self.max_temp - self.min_temp) * (epoch / self.warmup_epochs)
         
     def blend_schedule(self, epoch, start_alpha=0.1, end_alpha=0.55, alpha=None):
         if alpha is not None:
-            if epoch >= 5:
-                return alpha
+            return alpha
         return start_alpha + (end_alpha - start_alpha) * (epoch / self.warmup_epochs)
 
     def extract_features_from_onnx(self, waveform):
@@ -305,7 +256,7 @@ class Detector(nn.Module):
         if attention_mask.ndim == 3 and attention_mask.shape[0] == 1:
             attention_mask = np.squeeze(attention_mask, axis=0)
 
-        input_values = input_values.astype(np.float16)
+        input_values = input_values.astype(np.float32)
         attention_mask = attention_mask.astype(np.int64)
 
         # ONNX forward

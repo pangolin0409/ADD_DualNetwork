@@ -4,8 +4,10 @@ import os
 from torch.utils import data
 import pandas as pd
 import librosa
+from src.utils.RawBoost import SSI_additive_noise
+
 class RawAudio(data.Dataset):
-    def __init__(self, path_to_database, meta_csv, nb_samp = 0, cut = True, return_label = True, norm_scale = True, part='train'):
+    def __init__(self, path_to_database, meta_csv, nb_samp = 0, cut = True, return_label = True, norm_scale = True, part='train', args=None):
         super(RawAudio, self).__init__()
         self.nb_samp = nb_samp
         self.path_to_audio = path_to_database
@@ -18,6 +20,7 @@ class RawAudio(data.Dataset):
         # 讀取 meta.csv 文件
         meta_path = os.path.join(path_to_database, part, meta_csv)
         self.meta_data = pd.read_csv(meta_path)
+        self.args = args
             
     def __len__(self):
         return len(self.meta_data)
@@ -28,12 +31,13 @@ class RawAudio(data.Dataset):
         filepath = os.path.join(self.path_to_audio, self.part, 'audio', file)
         
         try:
-            X, _ = sf.read(filepath)
-            # if self.part == 'train':
-            #     X, indx = librosa.effects.trim(X, top_db=40)
+            X, sr = sf.read(filepath)
             X = X.astype(np.float64)
         except:
             raise ValueError('%s'%filepath)
+        
+        if self.args is not None:
+            X = SSI_additive_noise(X, self.args.SNRmin,self.args.SNRmax,self.args.nBands,self.args.minF,self.args.maxF,self.args.minBW,self.args.maxBW,self.args.minCoeff,self.args.maxCoeff,self.args.minG,self.args.maxG,sr)
 
         if self.norm_scale:
             X = self._normalize_scale(X).astype(np.float32)
@@ -52,7 +56,7 @@ class RawAudio(data.Dataset):
         if not self.return_label:
             return X
         y = self.labels[label]
-        return X, y
+        return X, y, file
 
     def _normalize_scale(self, x):
         '''
