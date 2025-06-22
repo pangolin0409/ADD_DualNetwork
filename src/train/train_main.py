@@ -38,28 +38,32 @@ def safe_release(*objs):
 ###########################################
 
 def train_loop(args, model, device):
+    
+    def linear_warmup(epoch):
+        return min(0.1 + 0.9 * (epoch / warmup_epochs), 1.0)
+
     webhook = args.discord_webhook
 
     # Optimizer 與 Scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     warmup_epochs = args.warmup_epochs
-    scheduler_warmup = LambdaLR(optimizer, lambda epoch: min(epoch / warmup_epochs, 1.0))
-    scheduler_step = StepLR(optimizer, step_size=5, gamma=0.7)
+    scheduler_warmup = LambdaLR(optimizer, linear_warmup)
+    scheduler_step = StepLR(optimizer, step_size=15, gamma=0.85)
     scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_step], milestones=[warmup_epochs])
     
     train_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.train_datasets
     , worker_size=args.nb_worker, target_fake_ratio=1, part='train', is_downsample=False, args=args)
     val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.valid_datasets
-    , worker_size=args.nb_worker, target_fake_ratio=1, part='validation', is_downsample=False)
+    , worker_size=args.nb_worker, target_fake_ratio=6, part='test', is_downsample=False)
     quick_val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.valid_datasets
-    , worker_size=args.nb_worker, target_fake_ratio=3, part='validation', is_downsample=True)
+    , worker_size=args.nb_worker, target_fake_ratio=6, part='test', is_downsample=True)
 
     ce_loss_fn = nn.CrossEntropyLoss()
 
     best_eer = 999.0
     best_val_loss = float("inf")
     patience_counter = 0
-
+    delta = 0.01  # 用於判斷是否更新最佳模型
     for epoch in trange(args.num_epochs, desc="Epochs"):
         model.train()
         total_loss = 0.0
@@ -122,7 +126,6 @@ def train_loop(args, model, device):
             f.write(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
             f.write(f"Confusion Matrix:\n{cm}\n\n")
             f.write(f"Current Temp: {model.temp_schedule(epoch):.4f}, Current Alpha: {model.blend_schedule(epoch):.4f}\n\n")
-            f.write(f"focal_gamma: {args.focal_gamma}, focal_alpha: {args.focal_alpha}\n\n")
 
         # Save checkpoint
         model_path = os.path.join(args.save_path, args.model_name, f"checkpt_epoch_{epoch}.pth")
@@ -139,8 +142,9 @@ def train_loop(args, model, device):
             }, model_path)
         
         updated_best = False
-        if val_loss < best_val_loss:
+        if (eer < best_eer) or (val_loss < best_val_loss - delta):
             best_val_loss = val_loss
+            best_eer = eer
             updated_best = True
             torch.save({
                 'model_state_dict': model.state_dict(),
@@ -169,9 +173,7 @@ def train_loop(args, model, device):
             "epoch_val_loss": float(val_loss),
             "loss/ce": loss_ce.item(),
             "loss/loss_limp": loss_limp.item(),     
-            "loss/loss_load": loss_load.item(),
-            "wce_weight_0": args.wce_weight_0,
-            "wce_weight_1": args.wce_weight_1,
+            "loss/loss_load": loss_load.item()
         })
 
     return best_eer
@@ -196,7 +198,8 @@ def train_model(args):
         # 初始化模型架構
         onnx_session = ort.InferenceSession(args.onnx_path, providers=["CUDAExecutionProvider"]) 
         model = Detector(encoder_dim=args.encoder_dim, num_experts=args.num_experts, num_classes=args.num_classes
-                         , max_temp=args.max_temp, min_temp=args.min_temp, warmup_epochs=args.warmup_epochs , processor=processor, onnx_session=onnx_session).to(device)
+                         , max_temp=args.max_temp, min_temp=args.min_temp, start_alpha=args.start_alpha, end_alpha=args.end_alpha
+                         , warmup_epochs=args.warmup_epochs , processor=processor, onnx_session=onnx_session).to(device)
         best_eer = train_loop(args, model, device)
     finally:
         safe_release(model, onnx_session)

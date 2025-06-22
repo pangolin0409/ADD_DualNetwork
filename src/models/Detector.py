@@ -145,11 +145,16 @@ class Classifier(nn.Module):
 # Detector 模組：結合 SparseMoE 與 Classifier
 ###########################################
 class Detector(nn.Module):
-    def __init__(self, encoder_dim=1024, num_experts=24, num_classes=2, max_temp=2.5, min_temp=1.0, warmup_epochs=10, processor=None, onnx_session=None):
+    def __init__(self, encoder_dim=1024, num_experts=24, num_classes=2, max_temp=2.5, min_temp=1.0, start_alpha=0.2, end_alpha=0.8,warmup_epochs=10, processor=None, onnx_session=None):
         super().__init__()
         self.num_experts = num_experts
         self.processor = processor
         self.session = onnx_session
+        self.max_temp = max_temp
+        self.min_temp = min_temp
+        self.start_alpha = start_alpha
+        self.end_alpha = end_alpha
+        self.warmup_epochs = warmup_epochs
 
         self.shared_mlp =  nn.Sequential(
                 nn.LayerNorm(encoder_dim),
@@ -175,9 +180,6 @@ class Detector(nn.Module):
         self.time_attn_pool = TimeAttentionPool(encoder_dim // 2, heads=2)
         # Router
         self.router = LayerAwareRouter(encoder_dim // 2, router_temperature=max_temp)
-        self.max_temp = max_temp
-        self.min_temp = min_temp
-        self.warmup_epochs = warmup_epochs
         self.post_norm = nn.LayerNorm(encoder_dim//2)
         self.post_norm_final = nn.LayerNorm(encoder_dim//2)
         self.classifier = Classifier(input_dim=encoder_dim//2, num_classes=num_classes)
@@ -233,12 +235,17 @@ class Detector(nn.Module):
     def temp_schedule(self, epoch, temp=None):
         if temp is not None:
             return temp
-        return self.max_temp - (self.max_temp - self.min_temp) * (epoch / self.warmup_epochs)
-        
-    def blend_schedule(self, epoch, start_alpha=0.1, end_alpha=0.55, alpha=None):
+        progress = min(epoch / self.warmup_epochs, 1.0)
+        cosine = 0.5 * (1 + math.cos(math.pi * progress))
+        return self.min_temp + (self.max_temp - self.min_temp) * cosine
+
+    def blend_schedule(self, epoch, alpha=None):
         if alpha is not None:
             return alpha
-        return start_alpha + (end_alpha - start_alpha) * (epoch / self.warmup_epochs)
+        progress = min(epoch / self.warmup_epochs, 1.0)
+        # sigmoid-shaped curve
+        sigmoid = 1 / (1 + math.exp(-4 * (progress - 0.5)))
+        return self.start_alpha + (self.end_alpha - self.start_alpha) * sigmoid
 
     def extract_features_from_onnx(self, waveform):
         """
@@ -256,7 +263,7 @@ class Detector(nn.Module):
         if attention_mask.ndim == 3 and attention_mask.shape[0] == 1:
             attention_mask = np.squeeze(attention_mask, axis=0)
 
-        input_values = input_values.astype(np.float32)
+        input_values = input_values.astype(np.float16)
         attention_mask = attention_mask.astype(np.int64)
 
         # ONNX forward

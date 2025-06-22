@@ -3,8 +3,6 @@ import soundfile as sf
 import os
 from torch.utils import data
 import pandas as pd
-import librosa
-from src.utils.RawBoost import SSI_additive_noise
 
 class RawAudio(data.Dataset):
     def __init__(self, path_to_database, meta_csv, nb_samp = 0, cut = True, return_label = True, norm_scale = True, part='train', args=None):
@@ -36,9 +34,6 @@ class RawAudio(data.Dataset):
         except:
             raise ValueError('%s'%filepath)
         
-        if self.args is not None:
-            X = SSI_additive_noise(X, self.args.SNRmin,self.args.SNRmax,self.args.nBands,self.args.minF,self.args.maxF,self.args.minBW,self.args.maxBW,self.args.minCoeff,self.args.maxCoeff,self.args.minG,self.args.maxG,sr)
-
         if self.norm_scale:
             X = self._normalize_scale(X).astype(np.float32)
         X = X.reshape(1,-1) #because of LayerNorm for the input
