@@ -3,8 +3,6 @@ import soundfile as sf
 import os
 from torch.utils import data
 import pandas as pd
-import librosa
-from src.utils.RawBoost import SSI_additive_noise
 import torch
 class RawAudio(data.Dataset):
     def __init__(self, path_to_database, meta_csv, nb_samp = 0, cut = True, return_label = True, norm_scale = True, part='train', args=None, return_wav2vec_ft=False):
