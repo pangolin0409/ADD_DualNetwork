@@ -3,9 +3,11 @@ import soundfile as sf
 import os
 from torch.utils import data
 import pandas as pd
-
+import librosa
+from src.utils.RawBoost import SSI_additive_noise
+import torch
 class RawAudio(data.Dataset):
-    def __init__(self, path_to_database, meta_csv, nb_samp = 0, cut = True, return_label = True, norm_scale = True, part='train', args=None):
+    def __init__(self, path_to_database, meta_csv, nb_samp = 0, cut = True, return_label = True, norm_scale = True, part='train', args=None, return_wav2vec_ft=False):
         super(RawAudio, self).__init__()
         self.nb_samp = nb_samp
         self.path_to_audio = path_to_database
@@ -19,6 +21,7 @@ class RawAudio(data.Dataset):
         meta_path = os.path.join(path_to_database, part, meta_csv)
         self.meta_data = pd.read_csv(meta_path)
         self.args = args
+        self.return_wav2vec_ft = return_wav2vec_ft
             
     def __len__(self):
         return len(self.meta_data)
@@ -51,6 +54,13 @@ class RawAudio(data.Dataset):
         if not self.return_label:
             return X
         y = self.labels[label]
+
+        if self.return_wav2vec_ft:
+            wav2vec_ft_file_name = file.split('.')[0] + '.pt'
+            wav2vec_ft_path = os.path.join(self.path_to_audio, self.part, 'wav2vec2', wav2vec_ft_file_name)
+            wav2vec_ft = torch.load(wav2vec_ft_path, weights_only=False)
+            return X, y, file, wav2vec_ft
+
         return X, y, file
 
     def _normalize_scale(self, x):
@@ -86,7 +96,7 @@ class RawAudioBackup(data.Dataset):
         row = self.meta_data.iloc[index]
         file = row['filename']
         label = row['label'] if 'label' in row else 'bonafide'
-
+        
         # 讀取音訊
         path = os.path.join(self.audio_dir, file)
         x, _ = sf.read(path)

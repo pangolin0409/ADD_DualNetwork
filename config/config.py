@@ -15,8 +15,6 @@ def flatten_nested_dict(d, parent_key='', sep='.'):
 def init():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default="./config/base.yml", help='Path to the YAML config file')
-    parser.add_argument('--aug_group_file', type=str, default="./config/aug_group.yml", help='Path to aug group YAML')
-
     args, unknown = parser.parse_known_args()
 
     # 讀主設定檔
@@ -32,13 +30,23 @@ def init():
     parser.add_argument("--experiment", type=str, default="moe_full")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     
+    #rawnet2_config
+    parser.add_argument('-m_first_conv', type = int, default = 251)
+    parser.add_argument('-m_in_channels', type = int, default = 1)
+    parser.add_argument('-m_filts', type = list, default = [128, [128,128], [128,256], [256,256]])
+    parser.add_argument('-m_blocks', type = list, default = [2, 4])
+    parser.add_argument('-m_nb_fc_att_node', type = list, default = [1])
+    parser.add_argument('-m_nb_fc_node', type = int, default = 1024)
+    parser.add_argument('-m_gru_node', type = int, default = 1024)
+    parser.add_argument('-m_nb_gru_layer', type = int, default = 1)
+    parser.add_argument('-m_nb_samp', type = int, default = 64600)
+
     # 第二輪 parse 所有參數
     args = parser.parse_args()
-    
-    # 載入 augmentation group 設定
-    if args.aug_group:
-        with open(args.aug_group_file, 'r') as f:
-            aug_groups = yaml.safe_load(f)
-        args.selected_augs = aug_groups[args.aug_group]
+    args.model = {}
+    for k, v in vars(args).items():
+        if k[:2] == 'm_':
+            print(k, v)
+            args.model[k[2:]] = v
     
     return args
