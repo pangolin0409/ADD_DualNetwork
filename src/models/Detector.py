@@ -236,16 +236,13 @@ class Detector(nn.Module):
         if temp is not None:
             return temp
         progress = min(epoch / self.warmup_epochs, 1.0)
-        cosine = 0.5 * (1 + math.cos(math.pi * progress))
-        return self.min_temp + (self.max_temp - self.min_temp) * cosine
+        return max(self.min_temp, self.max_temp - (self.max_temp - self.min_temp) * progress)
 
     def blend_schedule(self, epoch, alpha=None):
         if alpha is not None:
             return alpha
         progress = min(epoch / self.warmup_epochs, 1.0)
-        # sigmoid-shaped curve
-        sigmoid = 1 / (1 + math.exp(-4 * (progress - 0.5)))
-        return self.start_alpha + (self.end_alpha - self.start_alpha) * sigmoid
+        return min(self.end_alpha, self.start_alpha + (self.end_alpha - self.start_alpha) * progress)
 
     def extract_features_from_onnx(self, waveform):
         """
