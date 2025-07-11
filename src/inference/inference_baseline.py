@@ -80,25 +80,46 @@ def inference_loop(args, model, is_use_wav2vec_ft):
     return score_loader, label_loader, filename_loader
 
 def inference(args, model_path, save_path):
+    socres_path = os.path.join(save_path, f"scores_on{args.task}.csv")
     wandb.init(
-        project="audio-deepfake-detection",  #專案名稱
-        name=f"{get_git_branch()}_trained_on_{args.model_name}_tested_on_{args.task}",  # 實驗名稱
-        config=vars(args),
+            project="audio-deepfake-detection",  #專案名稱
+            name=f"{get_git_branch()}_trained_on_{args.model_name}_tested_on_{args.task}",  # 實驗名稱
+            config=vars(args),
     )
-    model = None
-    try:
-        model, is_use_wav2vec_ft = load_model(model_path, args)
-        score_loader, label_loader, filename_loader = inference_loop(args, model, is_use_wav2vec_ft)
-    finally:
-        safe_release(model)
+    if not os.path.exists(socres_path):
+        model = None
+        try:
+            model, is_use_wav2vec_ft = load_model(model_path, args)
+            score_loader, label_loader, filename_loader = inference_loop(args, model, is_use_wav2vec_ft)
+        finally:
+            safe_release(model)
+        # 儲存分數
+        df = pd.DataFrame({
+            'filename': filename_loader,
+            'label': label_loader,
+            'score': score_loader
+        })
+        df.to_csv(socres_path, index=False)
+        print(f"Scores saved to {socres_path}.")
+    else:
+        print(f"Scores already exist at {socres_path}. Loading scores...")
+        df = pd.read_csv(socres_path)
+        score_loader = df['score'].tolist()
+        label_loader = df['label'].tolist()
+        filename_loader = df['filename'].tolist()
 
     scores = np.array(score_loader)
     labels = np.array(label_loader)
     filenames = np.array(filename_loader)
 
     # 根據標籤分割分數
-    nontarget_scores = scores[labels == 0]  # 負例 (bonafide)
-    target_scores = scores[labels == 1]     # 正例 (spoof)
+    if args.model_name == "SLS":
+        print("Task is SLS, swapping labels for scores.")
+        nontarget_scores = scores[labels == 1]  # 負例 (bonafide)
+        target_scores = scores[labels == 0]     # 正例 (spoof)
+    else:
+        nontarget_scores = scores[labels == 0]  # 負例 (bonafide)
+        target_scores = scores[labels == 1]     # 正例 (spoof)
 
     # compute_eer(spoof, bonafide)
     eer, frr, far, threshold = compute_eer(target_scores, nontarget_scores)
@@ -113,7 +134,11 @@ def inference(args, model_path, save_path):
         f.write(f"Precision: {precision}, Recall: {recall}, F1 Score: {f1}\n")
         f.write(f"Confusion Matrix:\n{cm}\n")
 
-    preds = (scores >= threshold).astype(int)
+    if args.model_name == "SLS":
+        preds = (scores < threshold).astype(int)  # SLS: spoof is 0, bonafide is 1
+    else:
+        preds = (scores >= threshold).astype(int)
+
     # 組成 DataFrame
     df = pd.DataFrame({
         'filename': filenames,
@@ -145,7 +170,7 @@ def inference(args, model_path, save_path):
     return scores, labels
 
 def main(args):
-    model_path = os.path.join(args.model_folder, args.model_name, 'best_model.pth')
+    model_path = os.path.join(args.model_folder, args.model_name, args.checkpt_name)
     save_path = os.path.join(args.log_path, args.model_name)
     os.makedirs(save_path, exist_ok=True)
     scores, labels = inference(args, model_path, save_path)

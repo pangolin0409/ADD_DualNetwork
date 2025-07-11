@@ -4,6 +4,8 @@ import os
 from torch.utils import data
 import pandas as pd
 import torch
+from src.utils.RawBoost import SSI_additive_noise
+
 class RawAudio(data.Dataset):
     def __init__(self, path_to_database, meta_csv, nb_samp = 0, cut = True, return_label = True, norm_scale = True, part='train', args=None, return_wav2vec_ft=False):
         super(RawAudio, self).__init__()
@@ -31,24 +33,28 @@ class RawAudio(data.Dataset):
         
         try:
             X, sr = sf.read(filepath)
-            X = X.astype(np.float64)
         except:
             raise ValueError('%s'%filepath)
+        X = X.astype(np.float32)
+        if self.args is not None and self.part == 'train':
+            X = SSI_additive_noise(X, self.args.SNRmin,self.args.SNRmax,self.args.nBands,self.args.minF,self.args.maxF
+                                    ,self.args.minBW,self.args.maxBW,self.args.minCoeff,self.args.maxCoeff,self.args.minG
+                                    ,self.args.maxG,sr)
+    
+        # if self.norm_scale:
+        #     X = self._normalize_scale(X).astype(np.float32)
         
-        if self.norm_scale:
-            X = self._normalize_scale(X).astype(np.float32)
-        X = X.reshape(1,-1) #because of LayerNorm for the input
-
         if self.cut:
-            nb_time = X.shape[1]
+            nb_time = X.shape[0]
             if nb_time > self.nb_samp:
-                start_idx = np.random.randint(low = 0, high = nb_time - self.nb_samp)
-                X = X[:, start_idx : start_idx + self.nb_samp][0]
+                start_idx = np.random.randint(low=0, high=nb_time - self.nb_samp)
+                X = X[start_idx: start_idx + self.nb_samp]
             elif nb_time < self.nb_samp:
                 nb_dup = int(self.nb_samp / nb_time) + 1
-                X = np.tile(X, (1, nb_dup))[:, :self.nb_samp][0]
+                X = np.tile(X, nb_dup)[:self.nb_samp]
             else:
-                X = X[0]
+                X = X
+
         if not self.return_label:
             return X
         y = self.labels[label]
