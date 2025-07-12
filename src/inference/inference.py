@@ -40,7 +40,7 @@ def load_datasets(task, nb_samp, batch_size, nb_worker):
     # 加載數據集 (改為批量推理)
     print(f"Loading dataset: {task}")
     test_set = RawAudio(
-        path_to_database=f'E:/datasets//{task}',
+        path_to_database=f'F:/datasets//{task}',
         meta_csv='meta.csv',
         return_label=True,
         nb_samp= nb_samp,
@@ -88,11 +88,8 @@ def inference(args, model_path, save_path):
         name=f"{get_git_branch()}_trained_on_{args.model_name}_tested_on_{args.task}",  # 實驗名稱
         config=vars(args),
     )
-    processor = Wav2Vec2FeatureExtractor.from_pretrained(args.wav2vec_path)
     model = None
-    onnx_session = None
     try:
-        onnx_session = ort.InferenceSession(args.onnx_path, providers=["CUDAExecutionProvider"])
         model_args = {
             'encoder_dim': args.encoder_dim,
             'num_experts': args.num_experts,
@@ -101,9 +98,7 @@ def inference(args, model_path, save_path):
             'min_temp': args.min_temp,
             'start_alpha': args.start_alpha, 
             'end_alpha': args.end_alpha,
-            'warmup_epochs': args.warmup_epochs,
-            'processor': processor,
-            'onnx_session': onnx_session,
+            'warmup_epochs': args.warmup_epochs
         }
 
         model, epoch, temp, alpha = load_model(
@@ -113,7 +108,7 @@ def inference(args, model_path, save_path):
             **model_args)
         score_loader, label_loader, local_gating_loader, moe_feature_loader, filename_loader = inference_loop(args, model, temp, alpha)
     finally:
-        safe_release(model, onnx_session)
+        safe_release(model)
 
     scores = np.array(score_loader)
     labels = np.array(label_loader)
