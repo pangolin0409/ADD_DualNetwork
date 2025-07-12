@@ -44,11 +44,19 @@ def train_loop(args, model, device):
 
     webhook = args.discord_webhook
 
+    if args.is_finetune:
+        send_discord(f"🔄 開始微調模型：{args.model_name}", webhook)
+    else:
+        send_discord(f"🔄 凍結模型：{args.model_name}", webhook)
+
+        for param in model.ssl_model.model.parameters():
+            param.requires_grad = False
+
     # Optimizer 與 Scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     warmup_epochs = args.warmup_epochs
     scheduler_warmup = LambdaLR(optimizer, linear_warmup)
-    scheduler_step = StepLR(optimizer, step_size=15, gamma=0.85)
+    scheduler_step = StepLR(optimizer, step_size=5, gamma=0.7)
     scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_step], milestones=[warmup_epochs])
     
     train_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.train_datasets
@@ -187,22 +195,19 @@ def train_model(args):
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    processor = Wav2Vec2FeatureExtractor.from_pretrained(args.wav2vec_path)
     
     os.makedirs(os.path.join(args.save_path, args.model_name), exist_ok=True)
     os.makedirs(os.path.join(args.log_path, args.model_name), exist_ok=True)
 
     model = None
-    onnx_session = None
     try:
         # 初始化模型架構
-        onnx_session = ort.InferenceSession(args.onnx_path, providers=["CUDAExecutionProvider"]) 
-        model = Detector(encoder_dim=args.encoder_dim, num_experts=args.num_experts, num_classes=args.num_classes
+        model = Detector(ssl_model_name=args.ssl_model_name, encoder_dim=args.encoder_dim, num_experts=args.num_experts, num_classes=args.num_classes
                          , max_temp=args.max_temp, min_temp=args.min_temp, start_alpha=args.start_alpha, end_alpha=args.end_alpha
-                         , warmup_epochs=args.warmup_epochs , processor=processor, onnx_session=onnx_session).to(device)
+                         , warmup_epochs=args.warmup_epochs, is_training=True).to(device)
         best_eer = train_loop(args, model, device)
     finally:
-        safe_release(model, onnx_session)
+        safe_release(model)
         print("Cleaned up models and sessions.")
 
     print(f"Training done. Best EER = {best_eer:.4f}")

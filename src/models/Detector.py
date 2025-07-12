@@ -6,27 +6,21 @@ from sklearn.cluster import KMeans
 from typing import Dict, Optional
 import random
 import math
-import fairseq
+from transformers import Wav2Vec2Model, Wav2Vec2Config, AutoModel
 
 class SSLModel(nn.Module):
-    def __init__(self, ssl_model_path):
+    def __init__(self, ssl_model_name):
         super(SSLModel, self).__init__()
-        model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task([ssl_model_path])
-        self.model = model[0]
+        model= AutoModel.from_pretrained(ssl_model_name, output_hidden_states=True)
+        self.model = model
 
     def extract_feat(self, input_data):
-        if True:
-            if input_data.ndim == 3:
-                input_tmp = input_data[:, :, 0]
-            else:
-                input_tmp = input_data
-                
-            # [batch, length, dim]
-            layerresult = self.model(input_tmp, mask=False, features_only=True)['layer_results']
-        return layerresult
+        outputs = self.model(input_data)
+        hidden_states = outputs.hidden_states
+        return hidden_states
     
 ###########################################
-# Router 模組（包含 Data Augmentation）
+# Router 模組
 ###########################################
 class LayerAwareRouter(nn.Module):
     def __init__(self, input_dim, hidden_dim=128, router_temperature=2.0):
@@ -95,7 +89,7 @@ class Classifier(nn.Module):
 # Detector 模組：結合 SparseMoE 與 Classifier
 ###########################################
 class Detector(nn.Module):
-    def __init__(self, ssl_model_path=None, encoder_dim=1024, num_experts=24, num_classes=2, max_temp=2.5, min_temp=1.0, start_alpha=0.2, end_alpha=0.8,warmup_epochs=10, is_training=False):
+    def __init__(self, ssl_model_name=None, encoder_dim=1024, num_experts=24, num_classes=2, max_temp=2.5, min_temp=1.0, start_alpha=0.2, end_alpha=0.8,warmup_epochs=10, is_training=False):
         super().__init__()
         self.num_experts = num_experts
         self.max_temp = max_temp
@@ -103,7 +97,7 @@ class Detector(nn.Module):
         self.start_alpha = start_alpha
         self.end_alpha = end_alpha
         self.warmup_epochs = warmup_epochs
-        self.ssl_model = SSLModel(ssl_model_path)
+        self.ssl_model = SSLModel(ssl_model_name)
 
         if is_training:
             self.ssl_model.model.train()
@@ -142,9 +136,11 @@ class Detector(nn.Module):
         temp = self.temp_schedule(epoch, temp=temp)
         alpha = self.blend_schedule(epoch, alpha=alpha)
     
-        layerResult = self.ssl_model.extract_feat(wave.squeeze(-1))
-        hidden_states = [layer[0].transpose(0, 1) for layer in layerResult]  # from (T, B, D) to (B, T, D)
-        layer_outputs = torch.stack(hidden_states, dim=1)  # (B, 24, T, D)
+        # 提取特徵
+        with torch.no_grad():
+            hidden_states = self.ssl_model.extract_feat(wave.squeeze(-1))
+
+        layer_outputs = torch.stack(hidden_states[1:], dim=1)  # [B, L, T, D]
         B, L, T, D = layer_outputs.shape
 
         out = []
@@ -179,6 +175,7 @@ class Detector(nn.Module):
         shared_mlp_outputs = shared_mlp_outputs.mean(dim=1)  # [B, T, D']
         time_context_feat = self.time_attn_pool(shared_mlp_outputs)  # [B, D']
 
+        # -- final fusion --
         layer_fusion_feat = self.post_norm_final(layer_fusion_feat)
         time_context_feat = self.post_norm_final(time_context_feat)
 
