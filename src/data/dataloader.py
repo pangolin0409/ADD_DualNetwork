@@ -35,14 +35,14 @@ class RawAudio(data.Dataset):
             X, sr = sf.read(filepath)
         except:
             raise ValueError('%s'%filepath)
-        X = X.astype(np.float32)
-        if self.args is not None and self.part == 'train':
-            X = SSI_additive_noise(X, self.args.SNRmin,self.args.SNRmax,self.args.nBands,self.args.minF,self.args.maxF
-                                    ,self.args.minBW,self.args.maxBW,self.args.minCoeff,self.args.maxCoeff,self.args.minG
-                                    ,self.args.maxG,sr)
+        # X = X.astype(np.float32)
+        # if self.args is not None and self.part == 'train':
+        #     X = SSI_additive_noise(X, self.args.SNRmin,self.args.SNRmax,self.args.nBands,self.args.minF,self.args.maxF
+        #                             ,self.args.minBW,self.args.maxBW,self.args.minCoeff,self.args.maxCoeff,self.args.minG
+        #                             ,self.args.maxG,sr)
     
-        # if self.norm_scale:
-        #     X = self._normalize_scale(X).astype(np.float32)
+        if self.norm_scale:
+            X = self._normalize_scale(X)
         
         if self.cut:
             nb_time = X.shape[0]
@@ -54,6 +54,8 @@ class RawAudio(data.Dataset):
                 X = np.tile(X, nb_dup)[:self.nb_samp]
             else:
                 X = X
+
+        X = torch.tensor(X, dtype=torch.float32)
 
         if not self.return_label:
             return X

@@ -6,75 +6,25 @@ from sklearn.cluster import KMeans
 from typing import Dict, Optional
 import random
 import math
+import fairseq
 
-class WaveformAugmentor:
-    def __init__(self, manipulation_pool: Dict[str, Optional[torch.nn.Module]], 
-                 activation_prob: float = 0.0, min_aug: int = 1, max_aug: int = 2, verbose: bool = False, target_len=64600):
-        """
-        Args:
-            manipulation_pool: dict of augmentation name → module
-            activation_prob: probability to activate augmentation per sample
-            min_aug: minimum number of augmentations to apply
-            max_aug: maximum number of augmentations to apply
-            verbose: whether to print selected augmentations
-        """
-        self.pool = {k: v for k, v in manipulation_pool.items() if v is not None}
-        self.activation_prob = activation_prob
-        self.min_aug = min_aug
-        self.max_aug = max_aug
-        self.verbose = verbose
-        self.target_len = target_len  # 目標長度，預設為64600
+class SSLModel(nn.Module):
+    def __init__(self, ssl_model_path):
+        super(SSLModel, self).__init__()
+        model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task([ssl_model_path])
+        self.model = model[0]
 
-    def __call__(self, wav: torch.Tensor) -> torch.Tensor:
-        """
-        Apply augmentation to a waveform with probability `activation_prob`.
-        """
-        if self.activation_prob <= 0 or len(self.pool) == 0:
-            return wav
-
-        if random.random() > self.activation_prob:
-            return wav
-
-        aug_count = random.randint(self.min_aug, self.max_aug)
-        selected_keys = random.sample(list(self.pool.keys()), aug_count)
-
-        if self.verbose:
-            print(f"[AUG] Epoch Aug Prob: {self.activation_prob}, Selected: {selected_keys}")
-
-        for key in selected_keys:
-            aug = self.pool[key]
-            try:
-                wav = aug(wav)
-            except Exception as e:
-                if self.verbose:
-                    print(f"[{key}] augmentation failed: {e}")
-                continue
-
-        wav = self.pad_or_clip(wav)
-        return wav
-
-    def pad_or_clip(self, audio: torch.Tensor) -> torch.Tensor:
-        if audio.shape[-1] < self.target_len:
-            return F.pad(audio, (0, self.target_len - audio.shape[-1]))
-        elif audio.shape[-1] > self.target_len:
-            start = random.randint(0, audio.shape[-1] - self.target_len)
-            return audio[..., start:start + self.target_len]
-        return audio
-
-    def update(self, epoch):
-        if epoch < 1:
-            self.activation_prob = 0.2
-            self.min_aug = 1
-            self.max_aug = 1
-        elif epoch < 4:
-            self.activation_prob = 0.4
-            self.min_aug = 1
-            self.max_aug = 1
-        else:
-            self.activation_prob = 0.6
-            self.min_aug = 1
-            self.max_aug = 2
-
+    def extract_feat(self, input_data):
+        if True:
+            if input_data.ndim == 3:
+                input_tmp = input_data[:, :, 0]
+            else:
+                input_tmp = input_data
+                
+            # [batch, length, dim]
+            layerresult = self.model(input_tmp, mask=False, features_only=True)['layer_results']
+        return layerresult
+    
 ###########################################
 # Router 模組（包含 Data Augmentation）
 ###########################################
@@ -145,16 +95,20 @@ class Classifier(nn.Module):
 # Detector 模組：結合 SparseMoE 與 Classifier
 ###########################################
 class Detector(nn.Module):
-    def __init__(self, encoder_dim=1024, num_experts=24, num_classes=2, max_temp=2.5, min_temp=1.0, start_alpha=0.2, end_alpha=0.8,warmup_epochs=10, processor=None, onnx_session=None):
+    def __init__(self, ssl_model_path=None, encoder_dim=1024, num_experts=24, num_classes=2, max_temp=2.5, min_temp=1.0, start_alpha=0.2, end_alpha=0.8,warmup_epochs=10, is_training=False):
         super().__init__()
         self.num_experts = num_experts
-        self.processor = processor
-        self.session = onnx_session
         self.max_temp = max_temp
         self.min_temp = min_temp
         self.start_alpha = start_alpha
         self.end_alpha = end_alpha
         self.warmup_epochs = warmup_epochs
+        self.ssl_model = SSLModel(ssl_model_path)
+
+        if is_training:
+            self.ssl_model.model.train()
+        else:
+            self.ssl_model.model.eval()  # 確保 SSL 模型在推理模式下
 
         self.shared_mlp =  nn.Sequential(
                 nn.LayerNorm(encoder_dim),
@@ -188,8 +142,9 @@ class Detector(nn.Module):
         temp = self.temp_schedule(epoch, temp=temp)
         alpha = self.blend_schedule(epoch, alpha=alpha)
     
-        all_hidden_states = self.extract_features_from_onnx(wave)  
-        layer_outputs = all_hidden_states[:, 1:]  # [B, 24, T, D]
+        layerResult = self.ssl_model.extract_feat(wave.squeeze(-1))
+        hidden_states = [layer[0].transpose(0, 1) for layer in layerResult]  # from (T, B, D) to (B, T, D)
+        layer_outputs = torch.stack(hidden_states, dim=1)  # (B, 24, T, D)
         B, L, T, D = layer_outputs.shape
 
         out = []
@@ -244,39 +199,6 @@ class Detector(nn.Module):
         progress = min(epoch / self.warmup_epochs, 1.0)
         return min(self.end_alpha, self.start_alpha + (self.end_alpha - self.start_alpha) * progress)
 
-    def extract_features_from_onnx(self, waveform):
-        """
-        使用 ONNX 將 raw waveform 轉成 hidden states (25 layers)
-        """
-        inputs = self.processor(
-            waveform, sampling_rate=16000, return_tensors="np"
-        )
-        input_values = inputs["input_values"]
-        attention_mask = inputs["attention_mask"]
-
-        # squeeze 處理 (batch, 1, seq_len) → (batch, seq_len)
-        if input_values.ndim == 3 and input_values.shape[0] == 1:
-            input_values = np.squeeze(input_values, axis=0)
-        if attention_mask.ndim == 3 and attention_mask.shape[0] == 1:
-            attention_mask = np.squeeze(attention_mask, axis=0)
-
-        input_values = input_values.astype(np.float16)
-        attention_mask = attention_mask.astype(np.int64)
-
-        # ONNX forward
-        outputs = self.session.run(None, {
-            "input_values": input_values,
-            "attention_mask": attention_mask
-        })
-
-        # (25, B, T, D) → (B, 25, T, D)
-        all_hidden_states = np.array(outputs[1])
-        all_hidden_states = np.transpose(all_hidden_states, (1, 0, 2, 3))
-
-        return torch.tensor(all_hidden_states, dtype=torch.float32).to(
-            torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        )
-    
     def compute_limp_loss(self, routing_weights):
         # routing_weights: [batch, num_experts]
         # 計算單個樣本 routing variance
@@ -291,22 +213,3 @@ class Detector(nn.Module):
         ideal = 1.0 / self.num_experts
         load_loss = torch.mean((batch_mean - ideal) ** 2)
         return load_loss
-    
-    def compute_entropy_loss(self, routing_weights):
-        ent = - (routing_weights * torch.log(routing_weights + 1e-6)).sum(dim=1).mean()
-        return ent
-    
-    def compute_router_supervised_loss(self, routing_weights, logits, labels):
-        preds = torch.argmax(logits, dim=1)  # [B]
-
-        # Step 2: classify correct / incorrect
-        correct_mask = (preds == labels).float()  # [B]
-        incorrect_mask = 1.0 - correct_mask        # [B]
-
-        # Step 3: compute routing entropy
-        entropy = - (routing_weights * torch.log(routing_weights + 1e-6)).sum(dim=1)  # [B]
-
-        # Step 4: apply only on incorrect samples
-        loss_router_supervised = (incorrect_mask * entropy).mean()
-
-        return loss_router_supervised

@@ -8,13 +8,13 @@ model:
 train:
   model_name: "DSD_ASV019"
   nb_samp: 64600
-  weight_decay: 0.0005
-  batch_size: 32
-  lr: 0.00005
-  num_epochs: 15
+  weight_decay: 0.0001
+  batch_size: 5
+  lr: 0.000001
+  num_epochs: 50
   nb_worker: 8
-  patience: 5
-  warmup_epochs: 12
+  patience: 3
+  warmup_epochs: 40
   aug_prob: 0.3
   max_temp: 2.5
   min_temp: 1.5
@@ -59,6 +59,7 @@ paths:
   log_path: "./logs"
   plot_path: "./plot"
   wav2vec_path: "./pretrained_models/wav2vec2-xls-r-300m"
+  ssl_model_path: "./pretrained_models/wav2vec2-xls-r-300m/xlsr2_300m.pt"
   onnx_path: "./onnx_models/xlsr_base_fp16.onnx"
   checkpt_name: "best_model.pth"
 
