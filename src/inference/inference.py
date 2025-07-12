@@ -91,6 +91,7 @@ def inference(args, model_path, save_path):
     model = None
     try:
         model_args = {
+            'ssl_model_name': args.ssl_model_name,
             'encoder_dim': args.encoder_dim,
             'num_experts': args.num_experts,
             'num_classes': args.num_classes,
