@@ -8,16 +8,27 @@ import random
 import math
 from transformers import Wav2Vec2Model, Wav2Vec2Config, AutoModel
 
+import fairseq
+
 class SSLModel(nn.Module):
-    def __init__(self, ssl_model_name):
+    def __init__(self, ssl_model_name=None):
         super(SSLModel, self).__init__()
-        model= AutoModel.from_pretrained(ssl_model_name, output_hidden_states=True)
-        self.model = model
+        
+        cp_path = ssl_model_name
+        model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task([cp_path])
+        self.model = model[0]
+        self.out_dim = 1024
 
     def extract_feat(self, input_data):
-        outputs = self.model(input_data)
-        hidden_states = outputs.hidden_states
-        return hidden_states
+        if True:
+            if input_data.ndim == 3:
+                input_tmp = input_data[:, :, 0]
+            else:
+                input_tmp = input_data
+                
+            # [batch, length, dim]
+            layerresult = self.model(input_tmp, mask=False, features_only=True)['layer_results']
+        return layerresult
     
 ###########################################
 # Router 模組
@@ -137,10 +148,9 @@ class Detector(nn.Module):
         alpha = self.blend_schedule(epoch, alpha=alpha)
     
         # 提取特徵
-        with torch.no_grad():
-            hidden_states = self.ssl_model.extract_feat(wave.squeeze(-1))
-
-        layer_outputs = torch.stack(hidden_states[1:], dim=1)  # [B, L, T, D]
+        layerResult = self.ssl_model.extract_feat(wave.squeeze(-1))
+        hidden_states = [layer[0].transpose(0, 1) for layer in layerResult]  # from (T, B, D) to (B, T, D)
+        layer_outputs = torch.stack(hidden_states, dim=1)  # (B, 24, T, D)
         B, L, T, D = layer_outputs.shape
 
         out = []

@@ -8,9 +8,9 @@ model:
 train:
   model_name: "DSD_ASV019"
   nb_samp: 64600
-  weight_decay: 0.0005
-  batch_size: 32
-  lr: 0.00005
+  weight_decay: 0.0001
+  batch_size: 5
+  lr: 0.000001
   num_epochs: 15
   nb_worker: 8
   patience: 3
@@ -23,7 +23,7 @@ train:
   train_datasets: ["Asvspoof2019_LA"]
   valid_datasets: ["in_the_wild", "Asvspoof2021_DF"]
   aug_group: "basic_noise"
-  is_finetune: false
+  is_finetune: true
 
 rawboost:
   nBands: 5
@@ -60,7 +60,7 @@ paths:
   log_path: "./logs"
   plot_path: "./plot"
   wav2vec_path: "./pretrained_models/wav2vec2-xls-r-300m"
-  ssl_model_name: "facebook/wav2vec2-large"
+  ssl_model_name: "./pretrained_models/wav2vec2-xls-r-300m/xlsr2_300m.pt"
   onnx_path: "./onnx_models/xlsr_base_fp16.onnx"
   checkpt_name: "best_model.pth"
 

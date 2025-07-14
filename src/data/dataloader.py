@@ -35,11 +35,11 @@ class RawAudio(data.Dataset):
             X, sr = sf.read(filepath)
         except:
             raise ValueError('%s'%filepath)
-        # X = X.astype(np.float32)
-        # if self.args is not None and self.part == 'train':
-        #     X = SSI_additive_noise(X, self.args.SNRmin,self.args.SNRmax,self.args.nBands,self.args.minF,self.args.maxF
-        #                             ,self.args.minBW,self.args.maxBW,self.args.minCoeff,self.args.maxCoeff,self.args.minG
-        #                             ,self.args.maxG,sr)
+        
+        if self.args is not None and self.part == 'train':
+            X = SSI_additive_noise(X, self.args.SNRmin,self.args.SNRmax,self.args.nBands,self.args.minF,self.args.maxF
+                                    ,self.args.minBW,self.args.maxBW,self.args.minCoeff,self.args.maxCoeff,self.args.minG
+                                    ,self.args.maxG,sr)
     
         if self.norm_scale:
             X = self._normalize_scale(X)
