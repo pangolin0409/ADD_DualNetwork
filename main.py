@@ -4,7 +4,8 @@ from src.train.train_main_baseline import main as baseline_main
 from src.train.train_main import main as train_main
 from src.inference.inference import main as inference_main
 from src.inference.inference_baseline import main as baseline_inference
-from inference.fn_anaylsis import main as fn_fp_anaylsis_main
+from src.inference.fn_anaylsis import main as fn_anaylsis_main
+from src.inference.fp_analysis import main as fp_anaylsis_main
 from src.utils.common_utils import send_discord
 import yaml
 import os
@@ -42,8 +43,11 @@ def main():
         elif args.experiment == "inference":
             inference_main(args)
             send_discord(f"📊 推理完成：{args.model_name} on {args.task}", webhook)
-        elif args.experiment == "fp_fn_anaysis":
-            fn_fp_anaylsis_main(args)
+        elif args.experiment == "fn_anaysis":
+            fn_anaylsis_main(args)
+            send_discord(f"📊 完成型1型2錯誤統計圖表：{args.model_name} on {args.task}", webhook)
+        elif args.experiment == "fp_anaysis":
+            fp_anaylsis_main(args)
             send_discord(f"📊 完成型1型2錯誤統計圖表：{args.model_name} on {args.task}", webhook)
     except Exception as e:
         print(f"Error: {e}")
