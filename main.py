@@ -4,7 +4,7 @@ from src.train.train_main_baseline import main as baseline_main
 from src.train.train_main import main as train_main
 from src.inference.inference import main as inference_main
 from src.inference.inference_baseline import main as baseline_inference
-from src.inference.fn_fp_anaylsis import main as fn_fp_anaylsis_main
+from inference.fn_anaylsis import main as fn_fp_anaylsis_main
 from src.utils.common_utils import send_discord
 import yaml
 import os
