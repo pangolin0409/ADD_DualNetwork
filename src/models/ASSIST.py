@@ -441,7 +441,7 @@ class Residual_block(nn.Module):
 
         else:
             self.downsample = False
-        self.mp = nn.MaxPool2d(kernel_size=(1,2), stride=(1,2))  # self.mp = nn.MaxPool2d((1,4))
+        self.mp = nn.MaxPool2d((1, 3))  # self.mp = nn.MaxPool2d((1,4))
 
     def forward(self, x):
         identity = x
@@ -668,12 +668,12 @@ class AasistEncoder(nn.Module):
 
     def forward(self, x, Freq_aug=False):
 
-        # x = x.unsqueeze(1)
-        # x = self.conv_time(x, mask=Freq_aug)
-        # x = x.unsqueeze(dim=1)
-        # x = F.max_pool2d(torch.abs(x), (3, 3))
-        # x = self.first_bn(x)
-        # x = self.selu(x)
+        x = x.unsqueeze(1)
+        x = self.conv_time(x, mask=Freq_aug)
+        x = x.unsqueeze(dim=1)
+        x = F.max_pool2d(torch.abs(x), (3, 3))
+        x = self.first_bn(x)
+        x = self.selu(x)
 
         # get embeddings using encoder
         # (#bs, #filt, #spec, #seq)
@@ -681,7 +681,7 @@ class AasistEncoder(nn.Module):
 
         # spectral GAT (GAT-S)
         e_S, _ = torch.max(torch.abs(e), dim=3)  # max along time
-        # e_S = e_S.transpose(1, 2) + self.pos_S
+        e_S = e_S.transpose(1, 2) + self.pos_S
 
         gat_S = self.GAT_layer_S(e_S)
         out_S = self.pool_S(gat_S)  # (#bs, #node, #dim)
@@ -746,3 +746,16 @@ class AasistEncoder(nn.Module):
         # output = self.out_layer(last_hidden)
 
         return last_hidden
+
+class DownStreamLinearClassifier(nn.Module):
+    def __init__(self, encoder, input_depth=160):
+        super(DownStreamLinearClassifier, self).__init__()
+        self.input_depth = input_depth
+        self.encoder = encoder  # this should be able to encoder the input(batch_size, 64600) into feature vectors(batch_size, input_depth)
+        self.fc = nn.Linear(input_depth, 2)  
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.fc(x)
+        x = x.squeeze(1)
+        return x

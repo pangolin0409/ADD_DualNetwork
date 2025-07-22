@@ -41,7 +41,7 @@ def extract_representation(dataset_name, sample_rate=16000, batch_size=128):
         )
 
         # 3) 建立輸出資料夾
-        target_dir = os.path.join(f'F:/datasets/{dataset_name}', part_, 'wav2vec2')
+        target_dir = os.path.join(f'E:/datasets/{dataset_name}', part_, 'wav2vec2')
         os.makedirs(target_dir, exist_ok=True)
 
         print(f"Start processing {dataset_name} - {part_} ...")

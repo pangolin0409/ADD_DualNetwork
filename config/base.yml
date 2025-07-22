@@ -1,42 +1,71 @@
 model:
   seed: 42
   encoder_dim: 1024
-  routing_dim: 4
-  select_k: 5
-  top_k: 2
+  num_experts: 24
   expert_dim: 128
   num_classes: 2
 
 train:
   model_name: "DSD_ASV019"
-  layer_select_model_name: "LS_ASV019"
   nb_samp: 64600
   weight_decay: 0.0001
-  batch_size: 128
-  lr: 0.0001
-  num_epochs: 10
-  device: "cuda"
-  nb_worker: 4
-  patience: 5
-  warmup_epochs: 3
-  consistency_warmup: 3
-  router_aug_prob: 0.7
-  datasets: ["Asvspoof2019_LA"]
+  batch_size: 5
+  lr: 0.000001
+  num_epochs: 15
+  nb_worker: 8
+  patience: 3
+  warmup_epochs: 12
+  aug_prob: 0.3
+  max_temp: 2.5
+  min_temp: 1.5
+  start_alpha: 0.2
+  end_alpha: 0.8
+  train_datasets: ["Asvspoof2019_LA"]
+  valid_datasets: ["in_the_wild", "Asvspoof2021_DF"]
+  aug_group: "basic_noise"
+  is_finetune: true
+
+rawboost:
+  nBands: 5
+  minF: 20
+  maxF: 8000
+  minBW: 100
+  maxBW: 1000
+  minCoeff: 10
+  maxCoeff: 100
+  minG: 0
+  maxG: 0
+  minBiasLinNonLin: 5
+  maxBiasLinNonLin: 20
+  N_f: 5
+  P: 10
+  g_sd: 2
+  SNRmin: 10
+  SNRmax: 40
+
+inference:
+  task: "in_the_wild"
+  upload_plots: false
 
 loss:
   lambda_ce: 1.0
-  lambda_contrastive: 0.3
-  lambda_consistency: 0.3
   lambda_limp: 0.3
-  lambda_unknown: 0.2
-  lambda_entropy: 0.1
+  lambda_load: 1.0
+  lambda_entropy: 0.0
 
 paths:
   aasist_config_path: "./config/AASIST.conf"
   save_path: "./checkpoints"
+  model_folder: "./checkpoints"
   log_path: "./logs"
+  plot_path: "./plot"
   wav2vec_path: "./pretrained_models/wav2vec2-xls-r-300m"
+  ssl_model_name: "./pretrained_models/wav2vec2-xls-r-300m/xlsr2_300m.pt"
   onnx_path: "./onnx_models/xlsr_base_fp16.onnx"
+  checkpt_name: "best_model.pth"
 
 meta:
-  description: "Layer-Selection + DSD"
+  description: "Dual Branch"
+  discord_webhook: "https://discord.com/api/webhooks/1363816820028739756/_k6XM40W5f4OaRN0RJqWweG-AP-8rQbLIcZ_7x4YzK0ZjqPus7fSV9L_ul19B2pwrP9D"
+  secret_yml_path: "./config/secret.yml"
+  project_name: "audio-deepfake-detection"

@@ -1,170 +1,189 @@
-import numpy as np
-from tqdm import tqdm
-import json
 import os
+import gc
+import wandb
 import torch
-import argparse
-from data.dataloader import RawAudio
 from torch.utils.data import DataLoader
-from utils.eval_metrics import compute_eer
 from torch.nn.functional import softmax
-from src.models.ASSIST import AasistEncoder
-from src.train.train_main_baseline import DownStreamLinearClassifier
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.manifold import TSNE
+from tqdm import tqdm
+import numpy as np
+import pandas as pd
+from src.utils.eval_metrics import compute_eer, calculate_metrics
+from src.data.dataloader import RawAudio
+from src.utils.common_utils import get_git_branch
+import torch.nn as nn
+from src.utils.model_utils import select_model
+from src.utils.visualize import (
+    draw_roc_curve,
+)
+def safe_release(*objs):
+    for obj in objs:
+        if obj is not None:
+            if isinstance(obj, nn.Module):
+                obj.cpu()
+            del obj
+    gc.collect()
+    torch.cuda.empty_cache()
 
-torch.multiprocessing.set_start_method('spawn', force=True)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def init():
-    parser = argparse.ArgumentParser("load model scores")
-    parser.add_argument('--encoder_dim', type=int, default=1024, help="Dimension of the encoder output")
-    parser.add_argument('--routing_dim', type=int, default=4, help="Dimension of the routing network")
-    parser.add_argument('--top_k', type=int, default=2)
-    parser.add_argument('--expert_dim', type=int, default=128, help="Dimension of the routing network")
-    parser.add_argument('--num_classes', type=int, default=2, help="Number of classes for classification")
-    parser.add_argument("--wav2vec_path", type=str, default='./pretrained_models/wav2vec2-xls-r-300m', help="Path to the wav2vec model")
-    parser.add_argument('--model_folder', type=str, help="directory for pretrained model", default='./checkpoints')
-    parser.add_argument('-n', '--model_name', type=str, help="the name of the model", required=False, default='DSD_ASV019')
-    parser.add_argument('-s', '--score_dir', type=str, help="folder path for writing score", default='./scores')
-    parser.add_argument("-t", "--task", type=str, help="which dataset you would like to score on", required=False, default='19eval')
-    parser.add_argument('-nb_samp', type=int, default=64600)
-    parser.add_argument('-nb_worker', type=int, default=8)
-    parser.add_argument('--batch_size', type=int, default=32, help="Batch size for inference")  # 新增 batch_size 參數
-    parser.add_argument("--gpu", type=str, help="GPU index", default="2")
-    parser.add_argument("--aasist_config_path", type=str, default='./config/AASIST.conf', help="Path to the AASIST model config")
-    parser.add_argument("--log_path", type=str, default='./log', help="Path to the log")
-    args = parser.parse_args()
-    args.cuda = torch.cuda.is_available()
-    args.device = torch.device("cuda" if args.cuda else "cpu")
-    return args
-
-    
-def load_model(model_class, model_path, device, aasist_encoder):
-    # 初始化模型
-    model = model_class(aasist_encoder).to(device)
-    
-    # 載入檢查點
-    checkpoint = torch.load(model_path, map_location=device)
-    
-    # 如果是 state_dict，就用 load_state_dict 載入
-    if isinstance(checkpoint, dict) or isinstance(checkpoint, torch.collections.OrderedDict):
-        model.load_state_dict(checkpoint)
-    else:
-        # 如果是完整模型，直接載入
-        model = checkpoint.to(device)
-
+def load_model(model_path, args):
+    model, is_use_wav2vec_ft = select_model(args)
+    checkpoint = torch.load(model_path, map_location=args.device)
+    model.load_state_dict(checkpoint)
     model.eval()
-    return model
+    return model, is_use_wav2vec_ft
 
-def draw_expert_usage(gating, gating_type, task):
-    gating_array = np.array(gating)  # shape: [N, num_experts]
-    avg_usage = gating_array.mean(axis=0)  # 每個 expert 的平均使用量
-
-    plt.figure(figsize=(8, 4))
-    sns.barplot(x=list(range(len(avg_usage))), y=avg_usage)
-    plt.title(f"{gating_type} expert Usage on {task}")
-    plt.xlabel("Expert ID")
-    plt.ylabel("Avg Gating Score")
-    plt.savefig(f"{gating_type} expert_usage_{task}.png")
-    plt.close()
-
-def draw_ft_dist(features, labels,task, label_names=None):
-    features = np.array(features)
-    labels = np.array(labels)
-    
-    tsne = TSNE(n_components=2, perplexity=10, init='pca', learning_rate='auto', random_state=42)
-    reduced = tsne.fit_transform(features)
-
-    plt.figure(figsize=(10, 8))
-    for i, name in enumerate(label_names or []):
-        idx = (labels == i)
-        plt.scatter(reduced[idx, 0], reduced[idx, 1], label=name, s=8, alpha=0.5)
-    plt.legend()
-    plt.title(f"MoE Feature Distribution on {task}")
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(f"feature_distribution_{task}.png")
-    plt.close()
-    
-def test_on_desginated_datasets(task, model_path, save_path):
-    with open(args.aasist_config_path, "r") as f_json:
-        aasist_config = json.loads(f_json.read())
-    aasist_model_config = aasist_config["model_config"]
-    aasist_encoder = AasistEncoder(aasist_model_config).to(device)
-    
-    model = load_model(
-        model_class=DownStreamLinearClassifier,
-        model_path=model_path,
-        device=device,
-        aasist_encoder=aasist_encoder,)
-    model.eval()
-
-    # 加載數據集 (改為批量推理)
+def load_datasets(task, nb_samp, batch_size, nb_worker):
     print(f"Loading dataset: {task}")
-    match task:
-        case 'ASVspoof2021_DF':
-            path_to_wav2vec_ft = f'D:/datasets/{task}'
-        case _:
-            path_to_wav2vec_ft = f'E:/datasets/{task}'
     test_set = RawAudio(
-        path_to_database=f'../datasets/{task}',
+        path_to_database=f'F:/datasets/{task}',
         meta_csv='meta.csv',
         return_label=True,
-        nb_samp=args.nb_samp,
+        nb_samp= nb_samp,
         part='test',
-        wav2vec_path_prefix=path_to_wav2vec_ft,
+        return_wav2vec_ft=True, 
     )
     testDataLoader = DataLoader(
         test_set, 
-        batch_size=args.batch_size,   # 批量推理
+        batch_size=batch_size,
         shuffle=False, 
         drop_last=False, 
-        num_workers=args.nb_worker, 
-        pin_memory=True
+        num_workers=nb_worker, 
+        pin_memory=False, # 鎖定記憶體
+        persistent_workers=False # 用同一批 worker，不再重新創建
     )
+    return testDataLoader
 
-    # 用於保存結果
+def inference_loop(args, model, is_use_wav2vec_ft):
+    testDataLoader = load_datasets(args.task, args.nb_samp, args.batch_size, args.nb_worker)
     score_loader = []
     label_loader = []
-    # local_gating_loader = []
-    # moe_feature_loader = []
-    model.eval()
-
+    filename_loader = []
     # 遍歷測試數據
     for i, data_slice in enumerate(tqdm(testDataLoader)):
-        waveforms, labels, wav2vec_fts = data_slice
-        # waveforms = waveforms.to(device, non_blocking=True)
-        labels = labels.to(device, non_blocking=True)
-        # wav2vec_fts = wav2vec_fts.to(device, non_blocking=True)
-        wav2vec_ft = wav2vec_fts[:,2,:,:].to(device)
+        wave, labels, filename, wav2vec_ft = data_slice
+        labels = labels.to(args.device)
+        
         # 模型推理 (批量)
         with torch.no_grad():
-            logits = model(wav2vec_ft)
+            if is_use_wav2vec_ft:
+                wav2vec_ft = wav2vec_ft.to(args.device)
+                logits = model(wav2vec_ft)
+            else:
+                wave = wave.to(args.device)
+                logits = model(wave)
             scores = softmax(logits, dim=1)[:, 1]
-        
-        # 保存分數和標籤
+
         score_loader.extend(scores.detach().cpu().numpy().tolist())
         label_loader.extend(labels.detach().cpu().numpy().tolist())
+        filename_loader.extend(filename)
+    
+    return score_loader, label_loader, filename_loader
+
+def inference(args, model_path, save_path):
+    socres_path = os.path.join(save_path, f"scores_on{args.task}.csv")
+    wandb.init(
+            project="audio-deepfake-detection",  #專案名稱
+            name=f"{get_git_branch()}_trained_on_{args.model_name}_tested_on_{args.task}",  # 實驗名稱
+            config=vars(args),
+    )
+    if not os.path.exists(socres_path):
+        model = None
+        try:
+            model, is_use_wav2vec_ft = load_model(model_path, args)
+            score_loader, label_loader, filename_loader = inference_loop(args, model, is_use_wav2vec_ft)
+        finally:
+            safe_release(model)
+        # 儲存分數
+        df = pd.DataFrame({
+            'filename': filename_loader,
+            'label': label_loader,
+            'score': score_loader
+        })
+        df.to_csv(socres_path, index=False)
+        print(f"Scores saved to {socres_path}.")
+    else:
+        print(f"Scores already exist at {socres_path}. Loading scores...")
+        df = pd.read_csv(socres_path)
+        score_loader = df['score'].tolist()
+        label_loader = df['label'].tolist()
+        filename_loader = df['filename'].tolist()
 
     scores = np.array(score_loader)
     labels = np.array(label_loader)
+    filenames = np.array(filename_loader)
 
     # 根據標籤分割分數
-    nontarget_scores = scores[labels == 0]  # 正例 (bonafide)
-    target_scores = scores[labels == 1]     # 負例 (spoof)
+    if args.model_name == "SLS":
+        print("Task is SLS, swapping labels for scores.")
+        nontarget_scores = scores[labels == 1]  # 負例 (bonafide)
+        target_scores = scores[labels == 0]     # 正例 (spoof)
+    else:
+        nontarget_scores = scores[labels == 0]  # 負例 (bonafide)
+        target_scores = scores[labels == 1]     # 正例 (spoof)
 
+    # compute_eer(spoof, bonafide)
     eer, frr, far, threshold = compute_eer(target_scores, nontarget_scores)
+    # 計算其他評估指標
+    precision, recall, f1, cm = calculate_metrics(scores, labels, threshold)
     
-    print(f'Equal Error Rate (EER): {eer}, False Rejection Rate (FFR): {frr}, False Acceptance Rate (FAR): {far}, Threshold: {threshold}')
+    print(f'Equal Error Rate (EER): {eer}, False Rejection Rate (FFR): {frr}')
+    print(f'Precision: {precision}, Recall: {recall}, F1 Score: {f1}')
+    print(f'Confusion Matrix:\n{cm}')
     with open(os.path.join(save_path, "inference.txt"), "a") as f:
-        f.write(f"Test sets: {task}, EER: {eer:.4f}, FFR: {frr:.4f}, FAR: {far:.4f}, Threshold: {threshold:.4f}\n")
+        f.write(f"Test set: {args.task}, Equal Error Rate (EER): {eer}, False Rejection Rate (FFR): {frr}, False Acceptance Rate (FAR): {far}, Threshold: {threshold}\n")
+        f.write(f"Precision: {precision}, Recall: {recall}, F1 Score: {f1}\n")
+        f.write(f"Confusion Matrix:\n{cm}\n")
 
-    # draw_ft_dist(moe_feature_loader, labels, task, label_names=["Bona fide", "Spoof"])
+    if args.model_name == "SLS":
+        preds = (scores < threshold).astype(int)  # SLS: spoof is 0, bonafide is 1
+    else:
+        preds = (scores >= threshold).astype(int)
+
+    # 組成 DataFrame
+    df = pd.DataFrame({
+        'filename': filenames,
+        'label': labels,
+        'score': scores,
+        'pred': preds
+    })
+
+    # 篩選誤判樣本
+    fp_df = df[(df['label'] == 0) & (df['pred'] == 1)]  # False Positive
+    fn_df = df[(df['label'] == 1) & (df['pred'] == 0)]  # False Negative
+
+    # 合併錯誤樣本並加入錯誤類型欄位
+    fp_df['error_type'] = 'FP'
+    fn_df['error_type'] = 'FN'
+    error_df = pd.concat([fp_df, fn_df], ignore_index=True)
+
+    # 儲存為 CSV
+    error_df.to_csv(os.path.join(save_path, f"misclassified_files_on_{args.task}.csv"), index=False)
+
+    wandb.log({
+        "Train set": args.model_name,
+        "Test set": args.task,
+        "EER": eer,
+        "FFR": frr,
+        "FAR": far,
+        "Threshold": threshold
+    })
+    return scores, labels
+
+def main(args):
+    model_path = os.path.join(args.model_folder, args.model_name, args.checkpt_name)
+    save_path = os.path.join(args.log_path, args.model_name)
+    os.makedirs(save_path, exist_ok=True)
+    scores, labels = inference(args, model_path, save_path)
+
+    plot_dir = os.path.join(args.plot_path, args.model_name)
+    os.makedirs(plot_dir, exist_ok=True)
+
+    # === 視覺化 ===
+    draw_roc_curve(scores, labels, args.task, plot_dir)
     
 if __name__ == "__main__":
+    from config.config import init
     args = init()
-    model_path = os.path.join(args.model_folder, args.model_name, 'best_model.pth')
-    save_path = os.path.join(args.log_path, args.model_name)
-    test_on_desginated_datasets(args.task, model_path, save_path)
+    if torch.cuda.is_available():
+        torch.multiprocessing.set_start_method('spawn', force=True)
+    main(args)

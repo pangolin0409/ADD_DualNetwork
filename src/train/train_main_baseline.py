@@ -9,8 +9,7 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR, StepLR, SequentialLR
 from src.models.ASSIST import AasistEncoder
 from src.data.load_datasets import load_datasets
-from config.config import init
-from utils.eval_metrics import compute_eer
+from src.utils.eval_metrics import compute_eer
 
 # 把所有「隨機」都固定下來，讓每次訓練結果都一樣
 # 可重現實驗結果
@@ -205,10 +204,13 @@ def validate(model, val_loader, device, args):
     eer, frr, far, threshold = compute_eer(scores[labels == 1], scores[labels == 0])
     return eer, avg_loss
 
+def main(args):
+    train_model(args)
+
 ###########################################
 # 主程式入口
 ###########################################
 if __name__ == "__main__":
-    # 這裡假設 init() 會返回一個包含所有參數的 args 物件
+    from config.config import init
     args = init()
-    train_model(args)
+    main(args)

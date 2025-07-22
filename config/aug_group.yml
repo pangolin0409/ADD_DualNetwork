@@ -1,0 +1,77 @@
+# config/aug_groups.yaml
+
+basic_noise:
+  - white_noise_20
+  - env_noise_rain
+
+white_noise_variants:
+  - white_noise_15
+  - white_noise_20
+  - white_noise_25
+
+environmental_noise:
+  - env_noise_wind
+  - env_noise_breathing
+  - env_noise_coughing
+  - env_noise_rain
+  - env_noise_footsteps
+  - env_noise_clock_tick
+  - env_noise_sneezing
+
+volume_shift:
+  - volume_change_50
+  - volume_change_10
+
+time_warp:
+  - timestretch_095
+  - timestretch_105
+  - timestretch_110
+  - timestretch_090
+
+resample:
+  - resample_15000
+  - resample_15500
+  - resample_16500
+  - resample_17000
+
+fade_effects:
+  - fade_50_linear
+  - fade_30_linear
+  - fade_10_linear
+  - fade_50_exponential
+  - fade_50_quarter_sine
+  - fade_50_half_sine
+  - fade_50_logarithmic
+
+echo_effects:
+  - echoes_1000_02
+  - echoes_1000_05
+  - echoes_2000_05
+
+time_shift:
+  - time_shift_1600
+  - time_shift_16000
+  - time_shift_32000
+
+combo_stable:
+  - white_noise_20
+  - env_noise_breathing
+  - timestretch_095
+
+combo_plus_resample:
+  - white_noise_20
+  - env_noise_rain
+  - resample_15000
+
+combo_echoes:
+  - white_noise_20
+  - env_noise_coughing
+  - echoes_1000_05
+
+full_combo:
+  - white_noise_20
+  - env_noise_rain
+  - timestretch_095
+  - resample_15000
+  - time_shift_1600
+  - fade_50_linear

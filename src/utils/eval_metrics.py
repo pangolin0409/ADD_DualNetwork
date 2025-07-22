@@ -1,4 +1,6 @@
 import numpy as np
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
+
 def compute_det_curve(target_scores, nontarget_scores):
 
     n_scores = target_scores.size + nontarget_scores.size
@@ -39,3 +41,15 @@ def calculate_frr_far_at_threshold(target_scores, nontarget_scores, threshold):
     far_at_threshold = far[index]
     
     return frr_at_threshold, far_at_threshold
+
+def calculate_metrics(target_scores, nontarget_scores, threshold):
+    all_scores = np.concatenate((target_scores, nontarget_scores))
+    y_true = np.concatenate((np.ones_like(target_scores), np.zeros_like(nontarget_scores)))
+    y_pred = (all_scores >= threshold).astype(int)
+
+    precision = precision_score(y_true, y_pred)
+    recall = recall_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred)
+    cm = confusion_matrix(y_true, y_pred)
+
+    return precision, recall, f1, cm

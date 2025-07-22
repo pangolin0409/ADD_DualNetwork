@@ -2,361 +2,221 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from sklearn.cluster import KMeans
+from typing import Dict, Optional
+import random
 import math
-###########################################
-# MoCo-style Memory Bank (Prototype Memory)
-###########################################
-class MemoryBank(nn.Module):
-    def __init__(self, feature_dim, num_classes, momentum=0.99):
-        super(MemoryBank, self).__init__()
-        self.register_buffer('prototypes', torch.zeros(num_classes, feature_dim))
-        self.momentum = momentum
+from transformers import Wav2Vec2Model, Wav2Vec2Config, AutoModel
 
-    def update(self, features, labels):
-        for i in range(features.size(0)):
-            label = labels[i]
-            self.prototypes[label] = self.momentum * self.prototypes[label] + (1 - self.momentum) * features[i]
-        self.prototypes = F.normalize(self.prototypes, p=2, dim=1)
+import fairseq
 
-class UnknownMemoryBank(nn.Module):
-    def __init__(self, feature_dim, num_clusters=3, momentum=0.99):
+class SSLModel(nn.Module):
+    def __init__(self, ssl_model_name=None):
+        super(SSLModel, self).__init__()
+        
+        cp_path = ssl_model_name
+        model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task([cp_path])
+        self.model = model[0]
+        self.out_dim = 1024
+
+    def extract_feat(self, input_data):
+        if True:
+            if input_data.ndim == 3:
+                input_tmp = input_data[:, :, 0]
+            else:
+                input_tmp = input_data
+                
+            # [batch, length, dim]
+            layerresult = self.model(input_tmp, mask=False, features_only=True)['layer_results']
+        return layerresult
+    
+###########################################
+# Router 模組
+###########################################
+class LayerAwareRouter(nn.Module):
+    def __init__(self, input_dim, hidden_dim=128, router_temperature=2.0):
         super().__init__()
-        self.register_buffer('unknown_proto', torch.zeros(num_clusters, feature_dim))
-        self.momentum = momentum
-        self.initialized = False
+        self.temperature = router_temperature
 
-    def update_from_kmeans(self, new_centroids):
-        # new_centroids: (K, D) from sklearn KMeans
-        new_centroids = F.normalize(new_centroids, dim=1)
-        if not self.initialized:
-            self.unknown_proto = new_centroids.clone().detach()
-            self.initialized = True
-        else:
-            self.unknown_proto = (
-                self.momentum * self.unknown_proto + (1 - self.momentum) * new_centroids
-            )
-        self.unknown_proto = F.normalize(self.unknown_proto, dim=1)
-
-    def get(self):
-        return self.unknown_proto
-
-###########################################
-# Contrastive Loss（NT-Xent）
-###########################################
-class ContrastiveLoss(nn.Module):
-    def __init__(self, temperature=0.07):
-        super(ContrastiveLoss, self).__init__()
-        self.temperature = temperature
-
-    def forward(self, features, labels):
-        features = F.normalize(features, p=2, dim=1)
-        similarity_matrix = torch.matmul(features, features.t())
-        logits = similarity_matrix / self.temperature
-        labels = labels.contiguous().view(-1, 1)
-        mask = torch.eye(logits.shape[0], dtype=torch.bool, device=logits.device)
-        logits_masked = logits.masked_fill(mask, -1e9)
-        positive_mask = torch.eq(labels, labels.t()).float().to(logits.device) - torch.eye(logits.shape[0], device=logits.device)
-        log_prob = F.log_softmax(logits_masked, dim=1)
-        loss = - (positive_mask * log_prob).sum(dim=1) / (positive_mask.sum(dim=1) + 1e-9)
-        loss = loss.mean()
-        return loss
-    
-###########################################
-# Router 模組（包含 Data Augmentation）
-###########################################
-class TopkRouter(nn.Module):
-    def __init__(self, input_dim, num_experts, hidden_dim=128, 
-        aug_mode='interpolation', aug_prob=0.5, noise_scale=0.05):
-        """
-        Args:
-            input_dim (int): 輸入特徵維度。
-            num_experts (int): 專家數量。
-            hidden_dim (int): 隱藏層維度。
-            aug_mode (str): 擴增模式，可選 'interpolation' 或 'extrapolation' 或 'none'
-            aug_prob (float): 每筆樣本進行 mixup 風格擴增的機率。
-            noise_scale (float): 加性 Gaussian Noise 的標準差。
-        """
-        super(TopkRouter, self).__init__()
+        # 可以用一個大的共享 MLP，也可以每層獨立 MLP（先做共享）
         self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.1)
-        self.fc2 = nn.Linear(hidden_dim, num_experts)
-        self.softmax = nn.Softmax(dim=-1)
-        self.aug_mode = aug_mode
-        self.aug_prob = aug_prob
-        self.noise_scale = noise_scale
+        self.relu = nn.GELU()
+        self.dropout = nn.Dropout(0.1)
+        self.fc2 = nn.Linear(hidden_dim, 1)
+        self.sigmoid = nn.Sigmoid()
+    def forward(self, x, temp=None):
+        # x: [B, L, D]
+        if temp is None:
+            temp = self.temperature
 
-    def forward(self, x, augment=False, aug_mask=None):
-        """
-        x: (batch, input_dim)
-        augment: 是否啟用 routing data augmentation。
-        """
-        out = self.dropout(self.relu(self.fc1(x)))  # (batch, hidden_dim)
-        logits = self.fc2(out)
-        routing = self.softmax(logits)  # (batch, num_experts)
-        if augment and self.aug_mode != 'none' and aug_mask is not None:
-            routing = self.augment_routing(routing, aug_mask, mode=self.aug_mode)
-        return routing
+        B, L, D = x.shape
+        x = self.fc1(x)           # [B, L, hidden_dim]
+        x = self.relu(x)
+        x = self.dropout(x)
+        logits = self.fc2(x).squeeze(-1)  # [B, L]
+        scores = self.sigmoid(logits / temp)  # αₗ (soft routing weights)
+        return scores  # [B, L]
 
-    def augment_routing(self, routing, mask, mode='interpolation'):
-        """
-        只對 routing vector 中 mask 為 True 的樣本進行增強。
-        mask: (batch,) bool tensor
-        """
-        device = routing.device
-        routing_aug = routing.clone()
-        indices = mask.nonzero(as_tuple=True)[0]
+class TimeAttentionPool(nn.Module):
+    def __init__(self, dim, heads=2):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=heads, batch_first=True, dropout=0.1)
+        # 使用 LayerNorm 來正規化輸入
+        self.norm = nn.LayerNorm(dim)
 
-        if len(indices) == 0:
-            return routing  # 沒有任何要增強的樣本
-
-        selected = routing[indices]
-
-        if mode == 'interpolation':
-            perm = torch.randperm(selected.size(0))
-            selected_perm = selected[perm]
-            lam = torch.rand(selected.size(0), 1, device=device)
-            augmented = lam * selected + (1 - lam) * selected_perm
-
-        elif mode == 'extrapolation':
-            batch_mean = selected.mean(dim=0, keepdim=True)
-            lam = torch.rand(selected.size(0), 1, device=device)
-            augmented = selected + lam * (selected - batch_mean)
-
-        else:
-            augmented = selected
-
-        noise = torch.randn_like(augmented) * self.noise_scale
-        augmented = augmented + noise
-        augmented = augmented / (augmented.sum(dim=-1, keepdim=True) + 1e-8)
-
-        routing_aug[indices] = augmented
-        return routing_aug
-
-###########################################
-# MoE 模組：包含 top-k routing、Limp Loss 與 Load Balance Loss
-###########################################
-# class SparseMoE(nn.Module):
-#     def __init__(self, in_dim, out_dim, num_experts, top_k):
-#         super(SparseMoE, self).__init__()
-#         self.num_experts = num_experts
-#         self.top_k = top_k
-#         self.router = TopkRouter(in_dim, num_experts)
-#         self.experts = nn.ModuleList([
-#             nn.Sequential(
-#                 nn.Linear(in_dim, out_dim),
-#                 nn.ReLU(),
-#                 nn.Linear(out_dim, out_dim)
-#             ) for _ in range(num_experts)
-#         ])
-
-#     def forward(self, x, router_aug=False, aug_mask=None):
-#         # x: [B*K, D]
-#         B = x.size(0)
-#         routing_weights = self.router(x, augment=router_aug, aug_mask=aug_mask)  # [B, num_experts]
-#         topk_values, topk_indices = torch.topk(routing_weights, self.top_k, dim=1)  # [B, top_k]
-
-#         expert_outputs = torch.stack([expert(x) for expert in self.experts], dim=1)  # [B, num_experts, D]
-
-#         # 初始化 fused output
-#         out_dim = expert_outputs.size(-1)
-#         fused = torch.zeros(B, out_dim, device=x.device)
-
-#         for expert_idx in range(self.num_experts):
-#             # 找出哪些 sample 把 expert_idx 排進 top-k
-#             mask = (topk_indices == expert_idx)  # [B, top_k]
-#             sample_mask = mask.any(dim=1)  # [B]
-#             if sample_mask.sum() == 0:
-#                 continue
-#             expert_out = self.experts[expert_idx](x[sample_mask])  # [B', D]
-#             gating = routing_weights[sample_mask, expert_idx].unsqueeze(-1)  # [B', 1]
-#             fused[sample_mask] += expert_out * gating
-
-#         return fused, routing_weights
-
-#     def compute_limp_loss(self, routing_weights):
-#         # 計算單個樣本 routing variance
-#         mean_val = torch.mean(routing_weights, dim=1, keepdim=True)
-#         var = torch.mean((routing_weights - mean_val) ** 2, dim=1)
-#         limp_loss = -torch.mean(var)  # maximize variance -> minimize negative variance
-#         return limp_loss
-
-#     def compute_load_balance_loss(self, routing_weights):
-#         # 計算 batch 中每個 expert 的平均 routing weight
-#         batch_mean = torch.mean(routing_weights, dim=0)  # (num_experts,)
-#         ideal = 1.0 / self.num_experts
-#         load_loss = torch.mean((batch_mean - ideal) ** 2)
-#         return load_loss
+    def forward(self, x):  # x: [B, T, D]
+        x_norm = self.norm(x)
+        attn_out, _ = self.attn(x_norm, x_norm, x_norm)  # contextualize over time
+        pooled = attn_out.mean(dim=1)  # [B, D]
+        return pooled
     
-#     def compute_entropy_loss(self, routing_weights):
-#         # routing_weights: [batch, num_experts]
-#         ent = - (routing_weights * torch.log(routing_weights + 1e-6)).sum(dim=1).mean()
-#         return ent
-
-class SparseMoE(nn.Module):
-    def __init__(self, in_dim, out_dim, num_experts, top_k):
-        """
-        Args:
-            in_dim (int): 輸入特徵維度。
-            out_dim (int): 每個 expert 的輸出維度。
-            num_experts (int): 專家數量。
-            top_k (int): 每筆樣本選擇 top-k expert。
-        """
-        super(SparseMoE, self).__init__()
-        self.num_experts = num_experts
-        self.top_k = top_k
-        # 不需要將 top_k 傳入 Router，Router 只輸出 routing vector
-        self.router = TopkRouter(in_dim, num_experts)
-        self.experts = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(in_dim, out_dim),
-                nn.ReLU(),
-                nn.Linear(out_dim, out_dim)
-            ) for _ in range(num_experts)
-        ])
-    
-    def forward(self, x, router_aug=False, aug_mask=None):
-        # x: [B, in_dim]
-        routing_weights = self.router(x, augment=router_aug, aug_mask= aug_mask)  # (batch, num_experts)
-        topk_values, topk_indices = torch.topk(routing_weights, self.top_k, dim=1)
-        
-        B = x.size(0)
-        # 計算 expert 輸出
-        expert_outputs = []
-        for expert in self.experts:
-            expert_outputs.append(expert(x))  # 每個: (B, out_dim)
-        expert_outputs = torch.stack(expert_outputs, dim=1)  # (B, num_experts, out_dim)
-        
-        # 初始化 fused output
-        out_dim = expert_outputs.shape[-1]
-        fused = torch.zeros(B, out_dim, device=x.device)
-        
-        # 對每個 expert
-        for expert_idx in range(self.num_experts):
-            # 找出哪些樣本在 top_k 中選中了當前 expert_idx
-            mask = (topk_indices == expert_idx)  # [B, top_k]
-            sample_mask = mask.any(dim=1)         # [B]
-            if sample_mask.sum() == 0:
-                continue
-            x_subset = x[sample_mask]  # (B_subset, in_dim)
-            # expert 輸出
-            expert_out = self.experts[expert_idx](x_subset)  # (B_subset, out_dim)
-            # 從 routing_weights 中取出該 expert 的分數
-            gating_subset = routing_weights[sample_mask, expert_idx]  # (B_subset)
-            weighted_out = expert_out * gating_subset.unsqueeze(-1)
-            fused[sample_mask] += weighted_out
-        return fused, routing_weights  # 返回 fused output 與原 routing_weights
 ###########################################
 # Classifier 模組
 ###########################################
 class Classifier(nn.Module):
-    def __init__(self, input_dim, num_classes):
+    def __init__(self, input_dim=512, num_classes=2):
         super(Classifier, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 256)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(256, num_classes)
+        self.fc1 = nn.Linear(input_dim, input_dim//2)
+        self.act1 = nn.GELU()
+        self.dropout1 = nn.Dropout(0.2)
+
+        self.fc2 = nn.Linear(input_dim//2, input_dim//4)
+        self.act2 = nn.GELU()
+        self.dropout2 = nn.Dropout(0.1)
+
+        self.fc3 = nn.Linear(input_dim//4, num_classes)
 
     def forward(self, x):
         x = self.fc1(x)
-        x = self.relu(x)
+        x = self.act1(x)
+        x = self.dropout1(x)
         x = self.fc2(x)
+        x = self.act2(x)
+        x = self.dropout2(x)
+        x = self.fc3(x)
         return x
 
 ###########################################
 # Detector 模組：結合 SparseMoE 與 Classifier
 ###########################################
 class Detector(nn.Module):
-    def __init__(self, encoder_dim=1024, expert_dim=128, num_experts=4, top_k=2, num_classes=2, dropout=0.1, classifier=None):
-        super(Detector, self).__init__()
-        self.moe = SparseMoE(in_dim=encoder_dim, out_dim=expert_dim, num_experts=num_experts, top_k=top_k)
-        self.classifier = classifier
-        self.pre_norm = nn.LayerNorm(encoder_dim)
-        self.post_norm = nn.LayerNorm(expert_dim)
-    def forward(self, selected_layers=None, router_aug=False, aug_mask=None):
-        # selected_layers: [B, K, T, D]  ← LayerSelectorMoE 的輸出
-        B, K, T, D = selected_layers.shape
-        max_pooled, _ = selected_layers.max(dim=2)
-        max_pooled = max_pooled.reshape(B * K, D)
-        max_pooled = self.pre_norm(max_pooled)
-        moe_output, routing = self.moe(max_pooled, router_aug, aug_mask)  # [B*K, expert_dim]
-        routing = routing.view(B, K, -1)  # [B, K, num_experts]
-        routing = routing.mean(dim=1) # [B, num_experts]
-        moe_output = moe_output.view(B, K, -1)  # [B, K, expert_dim]
-        # TODO  融合方式：你可以選 mean / sum / weighted
-        fused = moe_output.sum(dim=1) / math.sqrt(K) # [B, expert_dim]
-        fused = self.post_norm(fused) # [B, expert_dim]
-        logits = self.classifier(fused)  # (batch, num_classes)
-        return logits, routing, moe_output, fused
+    def __init__(self, ssl_model_name=None, encoder_dim=1024, num_experts=24, num_classes=2, max_temp=2.5, min_temp=1.0, start_alpha=0.2, end_alpha=0.8,warmup_epochs=10, is_training=False):
+        super().__init__()
+        self.num_experts = num_experts
+        self.max_temp = max_temp
+        self.min_temp = min_temp
+        self.start_alpha = start_alpha
+        self.end_alpha = end_alpha
+        self.warmup_epochs = warmup_epochs
+        self.ssl_model = SSLModel(ssl_model_name)
 
-###########################################
-# Layer Selector 模組：使用 ONNX 進行特徵擷取
-###########################################
-class LayerSelectorMoE(nn.Module):
-    def __init__(self, topk=3, processor=None, onnx_session=None, hidden_dim=1024, proj_dim=128):
-        super(LayerSelectorMoE, self).__init__()
-        self.processor = processor
-        self.session = onnx_session
-        self.topk = topk
-        self.score_fn = nn.Linear(hidden_dim, 1)
+        if is_training:
+            self.ssl_model.model.train()
+        else:
+            self.ssl_model.model.eval()  # 確保 SSL 模型在推理模式下
 
-        # New projection module
-        self.pool_proj = nn.Sequential(
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, proj_dim)
+        self.shared_mlp =  nn.Sequential(
+                nn.LayerNorm(encoder_dim),
+                nn.Linear(encoder_dim, encoder_dim // 2),
+                nn.GELU(),
+                nn.Dropout(0.1),
+                nn.Linear(encoder_dim // 2, encoder_dim // 2)
         )
+        self.groups = 4
+        self.mlp_alpha = nn.Parameter(torch.ones(self.num_experts))  # 24 層
+        # 一個大MLP處理所有層
+        self.mlps = nn.ModuleList([
+            nn.Sequential(
+                nn.LayerNorm(encoder_dim),
+                nn.Linear(encoder_dim, encoder_dim // 2),
+                nn.GELU(),
+                nn.Dropout(0.1),
+                nn.Linear(encoder_dim // 2, encoder_dim // 2)
+            ) for _ in range(self.groups)
+        ])
 
-    def forward(self, wave=None):
-        wav2vec_ft = self.extract_features_from_onnx(wave)  # [B, 25, T, 1024]
-        layer_outputs = wav2vec_ft[:, 1:]  # [B, 24, T, D]
+        # Attention pooling也是一個大的Linear
+        self.time_attn_pool = TimeAttentionPool(encoder_dim // 2, heads=2)
+        # Router
+        self.router = LayerAwareRouter(encoder_dim // 2, router_temperature=max_temp)
+        self.post_norm = nn.LayerNorm(encoder_dim//2)
+        self.post_norm_final = nn.LayerNorm(encoder_dim//2)
+        self.classifier = Classifier(input_dim=encoder_dim//2, num_classes=num_classes)
+
+    def forward(self, wave, epoch=5, temp=None, alpha=None):
+        temp = self.temp_schedule(epoch, temp=temp)
+        alpha = self.blend_schedule(epoch, alpha=alpha)
+    
+        # 提取特徵
+        layerResult = self.ssl_model.extract_feat(wave.squeeze(-1))
+        hidden_states = [layer[0].transpose(0, 1) for layer in layerResult]  # from (T, B, D) to (B, T, D)
+        layer_outputs = torch.stack(hidden_states, dim=1)  # (B, 24, T, D)
         B, L, T, D = layer_outputs.shape
 
-        pooled = layer_outputs.mean(dim=2)  # [B, L, D]
-        #　可以試試看　max pooling
-        # pooled = layer_outputs.max(dim=2)[0]  # [B, L, D]
-        scores = self.score_fn(pooled).squeeze(-1)  # [B, L]
-        probs = F.softmax(scores, dim=1)  # [B, L]
+        out = []
+        grouped_mlp_outputs = []
+        shared_mlp_outputs = []
+        group_size = L // self.groups
 
-        topk_vals, topk_idx = torch.topk(probs, self.topk, dim=1)  # [B, K]
-        idx_expanded = topk_idx.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, T, D)  # [B, K, T, D]
-        selected_layers = torch.gather(layer_outputs, dim=1, index=idx_expanded)  # [B, K, T, D]
+        for i in range(self.num_experts):
+            group_idx = i // group_size
+            shared_mlp_output = self.shared_mlp(layer_outputs[:, i])  # [B, T, D']
+            group_mlp_output = self.mlps[group_idx](layer_outputs[:, i])  # [B, T, D']
+            weighted_mlp_output = shared_mlp_output + self.mlp_alpha[i] * group_mlp_output  # [B, T, D']
+            grouped_mlp_outputs.append(weighted_mlp_output)
+            shared_mlp_outputs.append(shared_mlp_output)
+            # Time pooling
+            time_pooled = self.time_attn_pool(weighted_mlp_output)  # [B, D']
+            out.append(time_pooled)
 
-        weights = topk_vals.unsqueeze(-1).unsqueeze(-1)  # [B, K, 1, 1]
-        weighted = (selected_layers * weights).sum(dim=1)  # [B, T, D]
+        linear_outputs = torch.stack(grouped_mlp_outputs, dim=1)  # [B, 24, T, D']
+        shared_mlp_outputs = torch.stack(shared_mlp_outputs, dim=1)  # [B, 24, T, D']
+        time_pooled = torch.stack(out, dim=1)  # [B, 24, D']
+        
+        # --- Branch 1: Layer-Aware Router ---
+        uniform = torch.ones(B, self.num_experts, device=time_pooled.device) / self.num_experts
+        learned = self.router(time_pooled, temp)  # [B, 24]
+        routing_weights = alpha * learned + (1 - alpha) * uniform
+        layer_fusion_feat = (linear_outputs * routing_weights.unsqueeze(-1).unsqueeze(-1)).sum(dim=1) # [B, T, D']
+        layer_fusion_feat = self.post_norm(layer_fusion_feat)
+        layer_fusion_feat = layer_fusion_feat.mean(dim=1)  # [B, D']
 
-        # 🔥 MaxPool over time (dim=1)
-        pooled_weighted, _ = torch.max(weighted, dim=1)  # [B, D]
+        # --- Branch 2: Time Context Pooling ---
+        shared_mlp_outputs = shared_mlp_outputs.mean(dim=1)  # [B, T, D']
+        time_context_feat = self.time_attn_pool(shared_mlp_outputs)  # [B, D']
 
-        # 🔥 LayerNorm + Linear projection to 128
-        projected = self.pool_proj(pooled_weighted)  # [B, 128]
+        # -- final fusion --
+        layer_fusion_feat = self.post_norm_final(layer_fusion_feat)
+        time_context_feat = self.post_norm_final(time_context_feat)
 
-        return projected, scores, topk_idx, selected_layers.detach()
+        fused_all = layer_fusion_feat + time_context_feat  # [B, D']
+        logits = self.classifier(fused_all)
 
-    def extract_features_from_onnx(self, waveform):
-        # 使用 processor 處理輸入
-        inputs = self.processor(waveform, sampling_rate=16000, return_tensors="np")
+        return logits, routing_weights, fused_all, time_pooled
 
-        # 正確處理 input shape: 保證是 (batch, seq_len)
-        input_values = inputs["input_values"]
-        if input_values.ndim == 3 and input_values.shape[0] == 1:
-            input_values = np.squeeze(input_values, axis=0)
+    def temp_schedule(self, epoch, temp=None):
+        if temp is not None:
+            return temp
+        progress = min(epoch / self.warmup_epochs, 1.0)
+        return max(self.min_temp, self.max_temp - (self.max_temp - self.min_temp) * progress)
 
-        attention_mask = inputs["attention_mask"]
-        if attention_mask.ndim == 3 and attention_mask.shape[0] == 1:
-            attention_mask = np.squeeze(attention_mask, axis=0)
+    def blend_schedule(self, epoch, alpha=None):
+        if alpha is not None:
+            return alpha
+        progress = min(epoch / self.warmup_epochs, 1.0)
+        return min(self.end_alpha, self.start_alpha + (self.end_alpha - self.start_alpha) * progress)
 
-        input_values = input_values.astype(np.float16)
-        # attention_mask 必須是 int64
-        attention_mask = attention_mask.astype(np.int64)
+    def compute_limp_loss(self, routing_weights):
+        # routing_weights: [batch, num_experts]
+        # 計算單個樣本 routing variance
+        mean_val = torch.mean(routing_weights, dim=1, keepdim=True)
+        var = torch.mean((routing_weights - mean_val) ** 2, dim=1)
+        limp_loss = -torch.mean(var)  # maximize variance -> minimize negative variance
+        return limp_loss
 
-        # 使用 ONNX Session 推理
-        outputs = self.session.run(None, {
-            "input_values": input_values,
-            "attention_mask": attention_mask
-        })
-
-        # 取得所有 hidden states → shape: (25, batch, T, 1024)
-        all_hidden_states = np.array(outputs[1])  # (25, batch, T, 1024)
-        all_hidden_states = np.transpose(all_hidden_states, (1, 0, 2, 3))  # (batch, 25, T, 1024)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        layer_outputs = torch.tensor(all_hidden_states, dtype=torch.float32).to(device)
-        return layer_outputs  # (batch, 25, T, 1024)
+    def compute_load_balance_loss(self, routing_weights):
+        # 計算 batch 中每個 expert 的平均 routing weight
+        batch_mean = torch.mean(routing_weights, dim=0)  # (num_experts,)
+        ideal = 1.0 / self.num_experts
+        load_loss = torch.mean((batch_mean - ideal) ** 2)
+        return load_loss
