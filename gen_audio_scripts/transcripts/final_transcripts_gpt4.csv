@@ -1,0 +1,910 @@
+sentence_id,category,transcript
+1,connected_speech,"If you’re gonna come over, lemme know ‘cause I’ll hafta tidy up a bit first."
+2,connected_speech,"Yeah, I’d’ve gone to the party, but I was sorta tired and didn’t wanna drive all that way."
+3,connected_speech,"We shoulda left earlier 'cause now we’re gonna be late, aren’t we?"
+4,connected_speech,"I’d’ve called you earlier, but I kinda got caught up in something else."
+5,connected_speech,"We should’ve seen it comin’, but nobody said anything ’til it was too late."
+6,connected_speech,"I’m tryna figure out whatcha mean, but it’s sorta tricky, isn’t it?"
+7,connected_speech,"I would've grabbed some food, but I didn’t have enough time, y’see?"
+8,connected_speech,"We should’ve planned ahead, but we were just too caught up in the moment, y’know?"
+9,connected_speech,"I'll meetcha at the cafe around five-ish, if that's cool with you."
+10,connected_speech,"I'mma head out 'cause it's gettin' pretty late, don'tcha think?"
+11,connected_speech,"You shoulda seen how they were actin’, it was sorta unbelievable."
+12,connected_speech,"If you’re gonna head out later, lemme know so we can meet up."
+13,connected_speech,"Y’know, I’d’ve called you if I coulda found my phone, but it was lost in all that mess."
+14,connected_speech,"I shoulda known she wasn’t comin’, but I guess I just didn’t wanna see it."
+15,connected_speech,"I would've thought they’d be here by now, but I guess it’s not happenin', is it?"
+16,connected_speech,"If you wanna catch the bus, ya better hurry 'cause it's leavin' soon."
+17,connected_speech,"I shoulda called you earlier, but I was runnin' late and didn’t wanna rush the convo."
+18,connected_speech,"I should’ve called you earlier, but I didn’t have enough time, y’see?"
+19,connected_speech,"If you're gonna grab a coffee, could ya get me one too?"
+20,connected_speech,"I should’ve known she wasn’t really into it, but ya never know, right?"
+21,connected_speech,"We shoulda gone with 'em, but it just sorta slipped my mind, y'know?"
+22,connected_speech,"Could’ve sworn I saw ‘em at the café yesterday, but maybe I’m just misrememberin’."
+23,connected_speech,"I dunno if he’s comin’ to the party or not, but I’ll letcha know soon as I can."
+24,connected_speech,"If you wanna grab a bite later, lemme know cuz I'm free after six."
+25,connected_speech,"You shoulda called her, but I get it’s been a busy week, right?"
+26,connected_speech,"I dunno if you’ve seen it yet, but it’s supposed to be really good."
+27,connected_speech,"If you'd asked me earlier, I might've been able to help ya out."
+28,connected_speech,Couldja gimme a sec? I hafta finish up this email 'fore we head out.
+29,connected_speech,"I’d’ve called you earlier, but I couldn’t find my phone, y’know what I mean?"
+30,connected_speech,"If you’re thinkin’ ’bout goin’ out tonight, lemme know ‘cause I might tag along."
+31,connected_speech,"I dunno what you wanna do, but we’re kinda running outta time, aren’t we?"
+32,connected_speech,"If you wanna grab some coffee later, lemme know ‘cause I’m totally free."
+33,connected_speech,Y’all wanna grab some food or somethin’ before it gets too late?
+34,connected_speech,"If you’re gonna be there, lemme know ’cause I dunno if I can make it on time."
+35,connected_speech,"If you’re not busy, we could grab a coffee or somethin’, don’tcha think?"
+36,connected_speech,"We should’ve asked if it’s gonna rain tomorrow, but I guess we’ll find out."
+37,connected_speech,"If you’re gonna be around later, lemme know and we’ll figure somethin’ out."
+38,connected_speech,"If you're really thinkin' about it, you might wanna ask him 'cause he’ll probably know what’s up."
+39,connected_speech,You wanna grab some coffee or somethin' before we head out?
+40,connected_speech,"I dunno if you’re gonna make it on time, but I’d’ve called if I were you."
+41,connected_speech,"I should’ve called him earlier, but I just couldn’t find the time, y’know?"
+42,connected_speech,Whatcha doin' later? I thought we could grab some coffee or somethin'.
+43,connected_speech,"We shoulda met up earlier, but I didn’t realize it was gonna be this late."
+44,connected_speech,"I'm thinkin' we shoulda left earlier, but it’ll prob’ly be fine, right?"
+45,connected_speech,"I’d’ve thought you’d already seen it, but I guess ya haven’t had the time, right?"
+46,connected_speech,"I should’ve called him earlier, but I kinda lost track of time, y’know?"
+47,connected_speech,"If you wanna grab a coffee, we could meet up later, 'round five-ish?"
+48,connected_speech,"I’d’ve been there, but I sorta lost track of time, y’know?"
+49,connected_speech,"I'm gonna grab a bite 'fore we head out, you wanna come along?"
+50,connected_speech,"I dunno if it’s true, but I kinda heard you’re gonna move next month, right?"
+51,connected_speech,"I’d’ve called you earlier, but I was stuck in traffic and couldn’t get a hold of my phone."
+52,connected_speech,"I’d’ve thought you’d wanna come, but it’s up to you."
+53,connected_speech,"I dunno what we're gonna do 'bout it, but we'll figure somethin' out."
+54,connected_speech,"I would've called you earlier, but I didn’t have your number on me, so..."
+55,connected_speech,"So, whatcha wanna do about dinner? We could grab somethin’ quick if ya don’t feel like cookin’."
+56,connected_speech,"Do you wanna grab some coffee later, or’re you busy?"
+57,connected_speech,Whatcha thinkin' 'bout dinner? We could grab somethin’ quick if you’re up for it.
+58,connected_speech,"You’ve gotta admit, it’s sorta unbelievable how fast the time goes by, huh?"
+59,connected_speech,"I’m thinkin’ I’ll just grab some coffee, ’cause it’s too early t’deal with all that."
+60,connected_speech,"I’d’ve called earlier, but I didn’t think it was that urgent, y’see?"
+61,connected_speech,"We should’ve gone earlier, but it kinda slipped my mind, y’know?"
+62,connected_speech,"I dunno if you’ve heard, but we’re meetin' up later, aren’t we?"
+63,connected_speech,Whatcha gonna do ’bout it if they don’t wanna come along?
+64,connected_speech,"I'm pretty sure she's gonna pick it up later, isn’t she?"
+65,connected_speech,"I shoulda called earlier, but I didn’t get a chance, ya see?"
+66,connected_speech,"We should’ve just asked him, 'cause I dunno if he’s comin’ or not."
+67,connected_speech,"I’d’ve called ya earlier, but I couldn’t get a hold of you, y’know?"
+68,connected_speech,"If you'd’ve seen it, you’d know what I’m talkin’ about—it was pretty amazin’, honestly."
+69,connected_speech,"You wanna grab a coffee or something later, if you’re not too busy?"
+70,connected_speech,"I shoulda called him earlier, but I didn’t have the time, y’know?"
+71,connected_speech,"I dunno if I can make it to the party, but I’ll try’n stop by later, alright?"
+72,connected_speech,"We shoulda planned ahead ‘cause now we’re gonna be late, aren’t we?"
+73,connected_speech,"I shoulda called her earlier, but I was runnin' late and couldn’t find my phone."
+74,connected_speech,Whatcha gonna do when ya don’t even have the time to figure it all out?
+75,connected_speech,"I’d’ve helped out if I could’ve, but I didn’t know ‘bout it till later."
+76,connected_speech,"I'm not sure if you wanna go out tonight, but lemme know."
+77,connected_speech,"If you wanna catch the bus, ya better leave now ‘cause it’s gonna be here soon."
+78,connected_speech,Didja hear ’bout what happened at the party last night?
+79,connected_speech,"Y’ever been to that café 'round the corner? It’s pretty nice, if yer into that sorta thing."
+80,connected_speech,"I’d’ve helped out if I could, but it was all sorted by the time I got there."
+81,plosive_fricative,"After dusk, Kate briskly brushed off the dusty shelves, discovering a vintage vase glistening with beauty."
+82,plosive_fricative,"Pausing briefly, Kate deftly crafted a vast tapestry before the frigid gusts swept it away."
+83,plosive_fricative,"Bobby swiftly picked the vibrant vase, ensuring it didn’t shatter on the sleek granite."
+84,plosive_fricative,"Kate briskly shifted the heavy basket, finding a snug spot next to Greg's vivid painting."
+85,plosive_fricative,"Britt laughed softly as the crisp, golden leaves fluttered and skittered across the paved path."
+86,plosive_fricative,"Terry briskly swept the soft velvet rug, amazed by its fading sheen."
+87,plosive_fricative,"The quiet café buzzed softly as Brett sketched vibrant landscapes, pausing... to sip his coffee."
+88,plosive_fricative,"Betsy carefully inspected the vintage vase, noting its glossy finish and tiny cracks."
+89,plosive_fricative,"Greg dashed past the buzzing fence, clutching his bright red backpack tightly."
+90,plosive_fricative,Kate briskly typed the swift response before Greg's buzz shocked her.
+91,plosive_fricative,"The brisk breeze whispered softly, picking up scattered papers and shifting them silently."
+92,plosive_fricative,"Amidst the bustling bazaar, Gabe swiftly picked up a soft shawl and checked its vibrant texture."
+93,plosive_fricative,"Betsy swiftly grabbed the plush velvet coat, pausing only as a gust of wind buzzed through."
+94,plosive_fricative,"Gabe swiftly packed the vast box of plush toys, zipping it shut before dusk."
+95,plosive_fricative,"The crisp, golden leaves rustled softly under Betty's brisk steps as she ventured through the dense forest."
+96,plosive_fricative,"Kathy's vibrant sketches depict bold, vast landscapes, whispering softly through the brisk autumn breeze."
+97,plosive_fricative,"Bobby swiftly stacked vibrant, glossy pamphlets beside the buzzing fan... hoping they'd stay put."
+98,plosive_fricative,"At the bustling fair, Kathy briskly grabbed the soft velvet scarf while it glistened in the bright sun."
+99,plosive_fricative,"Tad quickly scuffed his boots on the soft, frosty ground... just before Bev giggled with a mischievous glance."
+100,plosive_fricative,Katie's brisk tapping echoed softly as she engraved the vase with delicate precision.
+101,plosive_fricative,"The gusty wind swept across the silent park, rustling leaves and tipping over forgotten vases."
+102,plosive_fricative,"Kurt briskly tapped the vivid sketches, while Susan whispered about the grand prize."
+103,plosive_fricative,"Cathy swiftly grabbed the battered book, but paused—she could hear a faint buzzing from its pages."
+104,plosive_fricative,Betsy whispered softly... as the clock ticked loudly beside a buzzing fan.
+105,plosive_fricative,"Greg briskly packed the velvet satchel with fragile, polished trinkets... then swiftly dashed towards the buzzing exit."
+106,plosive_fricative,"Bright sparks flew as Deb carefully adjusted the cracked vase, whispering softly."
+107,plosive_fricative,"A brisk wind whipped the vast, dusty plains, scattering bits of shattered pottery... as dogs barked and shadows shifted."
+108,plosive_fricative,"Tracy zipped the sleek, black jacket and swiftly dashed through the bustling café."
+109,plosive_fricative,Victor baked a batch of soft scones... drizzling them with rich chocolate glaze.
+110,plosive_fricative,"Sophie swiftly grabbed the bright, velvet pouch... just as it tumbled off the cluttered shelf."
+111,plosive_fricative,"The cat, poised on the dusty shelf, sniffed curiously at the buzzing gadget."
+112,plosive_fricative,"Quickly, Beth savored the soft cake... its rich, velvety texture teased her taste buds."
+113,plosive_fricative,"Bobby crafted a vibrant vase; it gleamed and fizzed, showcasing his deft touch."
+114,plosive_fricative,"Kate swiftly packed the vibrant, glazed dishes... ensuring none got scratched or scuffed."
+115,plosive_fricative,"During the brisk autumn walk, Kate's vibrant scarf fluttered wildly in the gusty breeze."
+116,plosive_fricative,"Sasha swiftly packed the vibrant gift basket with glazed figs, dazzling guests at the party."
+117,plosive_fricative,"Gabe swiftly grabbed the soft, buzzing velvet case to pack."
+118,plosive_fricative,"Zach grabbed the sleek vase, shifting it swiftly before it plunged to the gravel floor."
+119,plosive_fricative,"The detective swiftly cracked the case, baffling those who thought it impossible."
+120,plosive_fricative,"Bobby swiftly packed the picnic basket with fresh fish and sizzling veggies, gazing at the setting sun."
+121,plosive_fricative,"Bobby swiftly picked up the silver vase, before it shattered into sharp fragments."
+122,plosive_fricative,"Bev swiftly packed the basket, stuffing fresh baguettes and soft cheeses inside."
+123,plosive_fricative,"Keith's deft fingers swiftly adjusted the frayed cable, ensuring a stable broadcast."
+124,plosive_fricative,"Gabe swiftly picked up the brisk draft, sensing a shift in the vast landscape... silent yet buzzing with whispers."
+125,plosive_fricative,"The chef swiftly baked puff pastry, garnishing it with zesty fish sauce."
+126,plosive_fricative,"The storm's gusty breath blew dust over the buzzing streets, scattering paper cups and breaking shop signs."
+127,plosive_fricative,"Gabe swiftly picked up the crumpled pages, sensing their vast potential."
+128,plosive_fricative,"Gavin swiftly packed the vibrant silk scarves, buzzing with anticipation."
+129,plosive_fricative,"Gabby swiftly picked the vivid sketch, contemplating its fragile beauty... until a gust disrupted everything."
+130,plosive_fricative,"Kate swiftly swept the dusty shelves, stopping briefly to examine the vintage vase she found."
+131,plosive_fricative,"Betty briskly unpacked the gleaming vases, careful to avoid any sharp edges."
+132,plosive_fricative,"Kathy swiftly zipped the bag shut, pausing to inspect each delicate vase."
+133,plosive_fricative,Grace swiftly packed a sketchbook and vibrant pastels... just as the breeze buzzed softly.
+134,plosive_fricative,"Bright sparks flew as the eager kids watched the craft burst into pieces, then scatter softly like whispers."
+135,plosive_fricative,"Amidst the bustling bazaar, Kevin swiftly packed six vibrant silk scarves, pausing occasionally to inspect their gleaming threads."
+136,plosive_fricative,"Gabe deftly placed the sleek, silver vase atop the creaky wooden shelf."
+137,plosive_fricative,"Bobby swiftly adjusted the cracked vase, ensuring it wouldn't shatter."
+138,plosive_fricative,"Baking a batch of soft cookies, Viv giggled as Greg swiftly tossed sprinkles above the velvet rug."
+139,plosive_fricative,"After dusk, the crafty fox tiptoed quietly past the buzzing garden gate."
+140,plosive_fricative,"The chef deftly crafted savory biscuits, drizzling them with a glaze of zestful flavor."
+141,intonation_stress,You're wearing *that* to the party?
+142,intonation_stress,I didn’t say she stole *your* idea.
+143,intonation_stress,I never said he *didn't* like the gift.
+144,intonation_stress,You're going to wear *that* to the party?
+145,intonation_stress,"So, you really want *my* opinion on this?"
+146,intonation_stress,I *gave* him the report?
+147,intonation_stress,You expect *me* to solve the problem?
+148,intonation_stress,I never said she *stole* your idea.
+149,intonation_stress,I didn’t say you *ruined* the dinner.
+150,intonation_stress,You really cooked *that* meal?
+151,intonation_stress,You really think *that* was his best performance?
+152,intonation_stress,I guess you think this *isn't* your problem?
+153,intonation_stress,"I didn’t say you were *wrong*, I just didn’t say you were *right*."
+154,intonation_stress,You call *that* a solution?
+155,intonation_stress,I never said *she* was boring.
+156,intonation_stress,I never said he *stole* the painting.
+157,intonation_stress,I guess we're having *pizza* for dinner again.
+158,intonation_stress,You actually *enjoy* working on the weekends?
+159,intonation_stress,I never said *you* stole the cookies.
+160,intonation_stress,I guess you really enjoyed the movie.
+161,intonation_stress,"I didn’t say you *couldn't* do it, just that you probably *shouldn’t*."
+162,intonation_stress,I saw you brought *some* food to the party.
+163,intonation_stress,I heard you invited *Anna* to the party.
+164,intonation_stress,I never said you were *wrong*.
+165,intonation_stress,I never said she stole *your* sandwich.
+166,intonation_stress,I heard you *wanted* to cook dinner tonight.
+167,intonation_stress,You really *trust* her judgment on this?
+168,intonation_stress,I never said she took *your* book.
+169,intonation_stress,I never said you broke the *vase*.
+170,intonation_stress,I never said he stole *your* wallet.
+171,intonation_stress,I heard you think she's a *genius*.
+172,intonation_stress,I never said you *stole* the painting.
+173,intonation_stress,I didn't say she stole the money.
+174,intonation_stress,I didn't say she stole *my* idea.
+175,intonation_stress,I can't believe you think *this* is the best option.
+176,intonation_stress,I didn’t say you stole the *cookies*.
+177,intonation_stress,I’m sure she *meant* to bring it today.
+178,intonation_stress,You really think *they* should apologize?
+179,intonation_stress,I never said she *wasn't* coming.
+180,intonation_stress,I didn't say *you* stole the cookies.
+181,intonation_stress,I never said he *stole* the idea.
+182,intonation_stress,I never said she stole *your* pen.
+183,pause_emphasis,"I thought I could handle it—turns out, I was wrong."
+184,pause_emphasis,"Why didn't you say something—anything, before it was too late?"
+185,pause_emphasis,"She stared out the window, lost in thought—wondering if she'd ever see him again."
+186,pause_emphasis,"I thought I was ready—turns out, I wasn’t."
+187,pause_emphasis,I thought I knew him—until today.
+188,pause_emphasis,"I thought I knew her, but—turns out—I didn’t know anything at all."
+189,pause_emphasis,I thought I could trust you—guess I was wrong.
+190,pause_emphasis,"It's strange—you think you know someone, and then... everything changes."
+191,pause_emphasis,I thought I knew him—but then everything changed.
+192,pause_emphasis,"She said she’d be here, yet—here I am alone."
+193,pause_emphasis,"You knew, didn't you—this was inevitable."
+194,pause_emphasis,I thought I knew him—until yesterday.
+195,pause_emphasis,I thought I was ready—until I saw him.
+196,pause_emphasis,"She promised she'd be here—yet, here I am waiting alone."
+197,pause_emphasis,I thought I was ready—until I saw her.
+198,pause_emphasis,I thought we were friends—weren’t we?
+199,pause_emphasis,Why didn't you call—did something happen?
+200,pause_emphasis,"You promised—you swore you wouldn't do this, yet here we are."
+201,pause_emphasis,You really thought I wouldn’t notice—but here we are.
+202,pause_emphasis,"She said she'd be here—unless, of course, she changed her mind."
+203,pause_emphasis,It's not that I don't care—it's just... complicated.
+204,pause_emphasis,"You think you know someone, and then—suddenly—they're a stranger."
+205,pause_emphasis,I thought everything was fine—until it wasn’t.
+206,pause_emphasis,You're here—after all this time.
+207,pause_emphasis,"I thought I had all the time in the world, and then—everything changed."
+208,pause_emphasis,"I thought it was over—turns out, it was just the beginning."
+209,pause_emphasis,I never thought I'd see you here—after everything that happened.
+210,pause_emphasis,Why didn’t you call—did something happen?
+211,pause_emphasis,"Sometimes, I wonder—do you really know me?"
+212,pause_emphasis,"I can't believe it—after all this time, you're finally here."
+213,pause_emphasis,I can't believe you forgot—again.
+214,pause_emphasis,I can't believe you said that—especially after everything we've been through.
+215,pause_emphasis,"She promised she'd never leave—yet here I am, alone."
+216,pause_emphasis,She looked into his eyes—searching for the truth—but found only silence.
+217,pause_emphasis,"You promised you'd be here, and yet—here I am, alone."
+218,pause_emphasis,"She looked at him, tears in her eyes—how could he betray her like this?"
+219,pause_emphasis,"You promised you'd be there, and yet—you weren't."
+220,pause_emphasis,"I thought I could trust you—turns out, I was wrong."
+221,pause_emphasis,"Sometimes you think you know someone—until, suddenly, you realize you don't."
+222,pause_emphasis,It's been years—has it really been that long?
+223,open_topic,"Beneath the kaleidoscopic canopy of the rainforest, a cacophony of chirps and howls harmonizes with the soft murmur of hidden streams."
+224,open_topic,"In the bustling bazaar of Marrakech, a cacophony of haggling merchants mingles with the aromatic wafts of saffron and cumin."
+225,open_topic,"Beneath the aurora's shimmering tapestry, an astronomer meticulously charted celestial symphonies above Reykjavik."
+226,open_topic,"Amidst the cacophony of bustling vendors, a weary traveler pondered the paradox of progress within ancient Marrakech's labyrinthine alleys."
+227,open_topic,"Beneath the kaleidoscopic canopy of autumn leaves, the biologist marveled at how urban wildlife adapts with nuanced resilience to concrete jungles."
+228,open_topic,"Beneath the sprawling canopy of bioluminescent flora, researchers marveled at the interplay of ecology and technology in this verdant, moonlit oasis."
+229,open_topic,"As the Arctic twilight weaves its ephemeral tapestry, scientists ponder climate models that foresee a thawing tundra transforming ecosystems anew."
+230,open_topic,"Beneath the verdant canopy of the ancient redwoods, a mosaic of sun-dappled shadows danced rhythmically with the whispering zephyrs."
+231,open_topic,"Amidst the bustling ambience of Kyoto’s evening streets, an artisanal chocolatier narrated tales of azuki bean confections to captivated tourists."
+232,open_topic,"Beneath the opalescent shimmer of bioluminescent waves, marine researchers diligently catalogued the elusive rhythms of humpback whale songs."
+233,open_topic,"As twilight draped the jagged Appalachian horizon, an elusive whippoorwill's melody intertwined with the hushed whispers of a nearby babbling brook."
+234,open_topic,"Beneath the shimmering auroras of Reykjavik, a renowned geologist meticulously studied ancient volcanic rocks, contemplating Earth's fiery origins."
+235,open_topic,"Amidst the cacophony of vibrant bazaars in Marrakech, a linguist marveled at the melodic intonation of polyglot vendors peddling their exotic wares."
+236,open_topic,"Beneath the luminescent tapestry of auroras in Tromsø, an astrophysicist eloquently unraveled the enigma of dark matter to a captivated assembly."
+237,open_topic,"As bioluminescent algae shimmered beneath the moonlit waves, marine ecologists pondered the intricate symbiosis sustaining oceanic life."
+238,open_topic,"As the shimmering aurora danced across the Arctic sky, bewildered biologists speculated on the migratory anomalies of subarctic avian species."
+239,open_topic,"Beneath the verdant canopy of the Amazon, biologists meticulously catalog diverse species, pondering evolutionary enigmas with reverent curiosity."
+240,open_topic,"Beneath the iridescent glow of bioluminescent waves, marine biologists meticulously catalog diverse cephalopod behaviors."
+241,open_topic,"Beneath the gnarled boughs of an ancient redwood, a symphony of cicadas crescendoed in harmony with the whispering coastal zephyr."
+242,open_topic,"Beneath the kaleidoscope of coral reefs, marine biologists documented the symbiotic ballet between phosphorescent fish and elusive cephalopods."
+243,open_topic,"Amidst the cacophony of bustling bazaars, an eclectic tapestry of spices and melodies unfurled beneath the blistering Marrakech sun."
+244,open_topic,"Amidst the cacophony of honking horns and bustling footfalls, a lone saxophonist serenaded the oblivious commuters under the twilight sky."
+245,open_topic,"Amid the cacophony of bustling Marrakesh souks, a curious traveler pondered the paradox of modernity juxtaposed with age-old traditions."
+246,open_topic,"Beneath the luminescent aurora, researchers meticulously documented the enigmatic migratory patterns of endangered Arctic terns."
+247,open_topic,"Amidst the labyrinthine corridors of biotechnology, a luminous discovery emerged, promising to revolutionize cellular regeneration like never before."
+248,open_topic,"Beneath the glimmering surface of Lake Baikal, ancient secrets and rare species weave a tapestry that challenges modern scientific understanding."
+249,open_topic,"In the hushed luminescence of dawn, an enigmatic murmuration of starlings orchestrated a symphony above Barcelona's labyrinthine streets."
+250,open_topic,"Beneath the neon tapestry of Shibuya's bustling intersection, a symphony of disparate accents murmured an unwritten ode to cosmopolitan serendipity."
+251,open_topic,"Beneath the kaleidoscope of fluttering kites, a street vendor juggled flavorsome empanadas amid the bustling mercado of Bogotá."
+252,open_topic,"Amidst the bustling streets of Marrakesh, an eclectic tapestry of aromas from sizzling tagines and zesty spices intermingled under a cerulean sky."
+253,open_topic,"Beneath the kaleidoscope of auroras, biologists theorized about the enigmatic migration patterns of Arctic foxes."
+254,open_topic,"Beneath the shimmering aurora, a caravan of geologists deciphered cryptic clues embedded in Iceland's volcanic tapestry."
+255,open_topic,"Beneath the kaleidoscope of glistening coral reefs, marine biologists pondered the impact of microplastic proliferation on oceanic biodiversity."
+256,open_topic,"Amidst the cacophony of bustling beehives, a horticulturist meticulously cataloged rare orchids thriving on the mist-laden slopes of Kilimanjaro."
+257,open_topic,"As the aurora wove its luminous tapestry over the frosty tundra, the biologist mused about climate shifts influencing polar ecosystems."
+258,open_topic,"Beneath the iridescent waves, bioluminescent creatures choreograph a nocturnal ballet, defying the abyssal darkness with their ephemeral glows."
+259,open_topic,"As the bioluminescent waves shimmered under the moon's silver gaze, surfers waxed poetic about the ephemeral beauty of nature's nocturnal symphony."
+260,open_topic,"Amid the cacophony of bustling markets in Marrakech, a kaleidoscope of aromas mingled as curious travelers bartered for intricately woven tapestries."
+261,open_topic,"Beneath the azure canopy, a cacophony of squawking macaws painted vibrant streaks against the verdant tapestry of the Amazonian rainforest."
+262,open_topic,"As the autumnal equinox approached, biologists meticulously cataloged the vibrant biodiversity thriving within Madagascar's diminishing rainforests."
+263,open_topic,"Beneath the sprawling canopy of emerald leaves, a biologist marveled at how nocturnal pollinators navigate the fragrant chaos of an Amazonian dusk."
+264,open_topic,"Beneath the incandescent glow of aurora borealis, a solitary biologist meticulously cataloged elusive arctic flora near Svalbard's icy fjords."
+265,open_topic,"Beneath the shadow of the eucalyptus grove, a kaleidoscope of butterflies danced unpredictably in the crisp afternoon breeze."
+266,open_topic,"In the kaleidoscope of vibrant coral reefs, marine biologists meticulously observe symbiotic relationships among creatures rarely seen by human eyes."
+267,open_topic,"In the kaleidoscope of bustling Marrakech markets, a symphony of bargaining whispers intertwined with aromatic wisps from sizzling tagine stands."
+268,open_topic,"In the labyrinthine alleys of Marrakech, artisans deftly hammer intricate patterns into gleaming copper under a sun-drenched sky."
+269,open_topic,"In the luminous glow of the autumnal equinox, bioluminescent plankton danced beneath cerulean waves along Vancouver Island's secluded shores."
+270,open_topic,"Beneath the canopy of bioluminescent flora, researchers cautiously navigated the serpentine pathways of the subterranean ecosystem."
+271,open_topic,"Amidst the bioluminescent glow of the coral reef, marine biologists meticulously documented the rare spawning ritual of an elusive octopus species."
+272,open_topic,"Under the luminescent glow of vintage Edison bulbs, the sommelier passionately elucidated the nuanced terroir of a rare Croatian Zinfandel."
+273,open_topic,"Underneath the obsidian waters of Lake Baikal, divers discovered shimmering specters that danced in eerie synchrony beneath a crescent moon."
+274,open_topic,"Amidst the cacophony of bustling bazaars, an artful chocolatier meticulously crafted lavender-infused truffles that melted at a whisper's warmth."
+275,open_topic,"Beneath the sprawling canopy of Costa Rican rainforests, a cacophony of howler monkeys orchestrates an audacious symphony at dawn's delicate embrace."
+276,open_topic,"Beneath the cathedral's sprawling arches, the historian meticulously deciphered cryptic runes that had slumbered in obscurity for centuries."
+277,open_topic,"Amidst the shimmering grandeur of Reykjavik's auroras, an inquisitive astrophysicist pondered cosmic intricacies over geothermal coffee."
+278,open_topic,"Beneath the kaleidoscopic canopy of autumn leaves, an intrepid botanist pondered the symbiotic dance between fungal mycelium and ancient oak roots."
+279,open_topic,"Underneath the luminescent aurora borealis, an astrophysicist pondered whether cosmic anomalies could unravel the secrets of dark matter."
+280,open_topic,"Beneath the luminescent aurora, Arctic foxes frolicked silently across the icy tundra, their ivory fur shimmering under a starlit canvas."
+281,open_topic,"Beneath the kaleidoscopic canopy of bioluminescent flora, ecologists pondered the implications of gene-editing on fragile rainforest ecosystems."
+282,open_topic,"As the vibrant kaleidoscope of autumn leaves fluttered past her, the botanist mused over the intricate symbiosis within a thriving forest ecosystem."
+283,open_topic,"Beneath the kaleidoscope of aurora borealis, a lone astrophysicist mused over quantum fluctuations while sipping her lemongrass-infused tea."
+284,open_topic,"Beneath the kaleidoscopic aurora, intrepid marine biologists deciphered cryptic cetacean calls in the Arctic's frigid expanse."
+285,open_topic,"As twilight descended, the iridescent aurora elegantly undulated over Reykjavik's skyline, capturing every spectator's breath in hushed awe."
+286,open_topic,"In the iridescent twilight, a kaleidoscope of fluttering monarchs choreographed an intricate ballet above the blooming lavender fields of Provence."
+287,open_topic,"While the artisan deftly sculpted an intricate marble bust, echoes of Bach's cello suites reverberated through the ancient Florentine studio."
+288,open_topic,"Beneath the luminescent canopy of bioluminescent fungi, researchers marveled at nature's dazzling artistry in an ancient New Zealand cavern."
+289,open_topic,"Beneath the verdant canopy of the Amazon, researchers meticulously cataloged obscure botanical specimens while jaguars prowled in shadowed silence."
+290,open_topic,"Beneath the shimmering aurora borealis, an intrepid astrophysicist mused over the enigmatic quantum fluctuations reverberating through time."
+291,open_topic,"Beneath the iridescent twilight, a kaleidoscope of bioluminescent jellyfish pulsated rhythmically in Monterey Bay's azure depths."
+292,open_topic,"Underneath the shimmering aurora, ecologists meticulously examined the cryptic behavior of Arctic foxes in their rapidly transforming habitat."
+293,open_topic,"Beneath the labyrinthine canopy of ancient sequoias, the biologist marveled at nature's resilience in an ever-changing climate."
+294,open_topic,"Underneath the kaleidoscope of aurora borealis, the astrophysicist mused about quantum entanglement's enigmatic dance with cosmic mysteries."
+295,open_topic,"Amidst the cacophony of bustling Seoul, a symphony of sizzling street-food stalls invites gastronomes to indulge in culinary curiosities."
+296,open_topic,"Beneath the kaleidoscopic autumnal canopy, a lone biologist meticulously cataloged iridescent fungi in the mist-laden forest of British Columbia."
+297,open_topic,"Beneath the verdant canopy of the Amazon rainforest, a cacophony of exotic bird calls intermingled with the distant hum of a riverboat motor."
+298,open_topic,"Beneath the luminescent tapestry of bioluminescent bays, marine scientists meticulously observed elusive cephalopods and their perplexing camouflage."
+299,open_topic,"Amidst the swirling din of bustling Taipei markets, a linguist pondered whether ancient dialects might slowly unravel like delicate silks."
+300,open_topic,"Amidst the chaotic symphony of morning commuters, the barista effortlessly crafted cappuccinos while contemplating quantum mechanics."
+301,open_topic,"Beneath the kaleidoscopic canopy of the rainforest, bioluminescent fungi illuminate the tangled web of roots like tiny earthbound stars."
+302,open_topic,"Amidst the kaleidoscope of neon lights, an eccentric saxophonist serenaded passersby with soulful jazz beneath Tokyo's bustling railway arches."
+303,open_topic,"Beneath the kaleidoscope of twilight, bioluminescent waves whispered secrets to the shoreline in a symphony only the moonlight understood."
+304,open_topic,"Beneath the shimmering auroras, a cacophony of glacial whispers mingled with the elusive symphony of arctic foxes."
+305,open_topic,"As the sun set over the shimmering Mediterranean, an enigmatic guitarist serenaded passersby with a melody both haunting and effervescent."
+306,open_topic,"Beneath the iridescent canopy of Brazil's rainforests, elusive jaguars navigate serpentine paths with an agility that belies their hefty frames."
+307,open_topic,"Beneath the kaleidoscope of aurora borealis, an intrepid astronomer whispered hypotheses about exoplanets' atmospheres to a curious cohort."
+308,open_topic,"Beneath the kaleidoscopic aurora, scientists endeavored to decipher cosmic signals amidst Arctic solitude and swirling snowflakes."
+309,open_topic,"Beneath the kaleidoscopic aurora, researchers meticulously documented nocturnal behaviors of Arctic foxes traversing the icy tundra."
+310,open_topic,"Amidst the verdant vineyards of Sonoma, a sommelier passionately pontificated on the serendipitous nuances of biodynamic viticulture."
+311,open_topic,"Beneath the opalescent glow of bioluminescent waves, marine biologists meticulously documented the enigmatic behaviors of phosphorescent jellyfish."
+312,open_topic,"Amidst the cacophony of bustling vendors, a fiery crimson macaw perched on Pedro's shoulder recited snippets of Shakespeare with uncanny precision."
+313,open_topic,"As twilight descended, the kaleidoscopic aurora unfurled across the Arctic sky, mesmerizing nomadic reindeer herders with its spectral dance."
+314,open_topic,"As the bioluminescent waves lapped against the shores of Yucatan, ethereal hues danced in an intricate ballet beneath a moonlit canopy."
+315,open_topic,"Amidst the cacophony of cicadas, a cryptic algorithm deciphered the whispers of ancient meteorological patterns along the shores of Nova Scotia."
+316,open_topic,"Amidst the bustling chatter of the Edinburgh Fringe, an eccentric mime captivated passersby with his whimsical portrayal of quantum entanglement."
+317,open_topic,"Amidst the labyrinthine alleys of Marrakech, an artisan deftly crafted intricate mosaics that mirrored centuries-old Berber traditions."
+318,open_topic,"Beneath the sprawling canopy of bioluminescent foliage, ecologists whispered about rewilding efforts in Madagascar's vanishing rainforests."
+319,open_topic,"Beneath the shimmering surface of Lake Baikal, scientists discovered ancient microbial life thriving amidst delicate subterranean hydrothermal vents."
+320,open_topic,"Amidst the cacophony of bustling bazaars, a linguist pondered the enigmatic evolution of creole dialects interspersed with digital lexicons."
+321,open_topic,"Beneath the kaleidoscope of swirling autumn leaves, an art historian pondered the enigmatic brushstrokes defining a lesser-known Vermeer."
+322,open_topic,"Beneath the kaleidoscopic canopy of cherry blossoms, a linguist pondered how cultural nuances elude even the most advanced translation algorithms."
+323,open_topic,"Beneath the cerulean expanse of a twilight sky, bioluminescent waves rhythmically caressed the sandy shores of coastal Biolumina."
+324,open_topic,"Under the iridescent aurora, a biologist meticulously documented nocturnal avian behavior amid the isolated fjords of Svalbard."
+325,rhyme_alliteration,"If the whimsical whiskers of a walrus wish to whisper wisdom, would wondrous wonders wander within?"
+326,rhyme_alliteration,"If quixotic quandaries quietly quiver, the crimson critters craftily consider cavorting."
+327,rhyme_alliteration,"If the jester's jest juxtaposes jovially, then jubilant jackdaws jitter in their jocund jamboree."
+328,rhyme_alliteration,"Should the sapphire sea silently sigh, succumbing to ceaseless cerulean serenades, if whimsical whales waltz in moonlit masquerades?"
+329,rhyme_alliteration,"If whimsical whirls waltz whimsically, a grinning gargoyle might gaily gamble on gathering gallant gusts."
+330,rhyme_alliteration,"If whimsical waltzing wharf rats warily wander, would waterlogged wares wither under weathered wicker?"
+331,rhyme_alliteration,"If the whimsical whirligig were to whirl, would it unfurl in a swirl or simply twirl like a murmuring mermaid?"
+332,rhyme_alliteration,"If whistling winds whisked away wishes, whimsical whispers would waltz wondrously."
+333,rhyme_alliteration,"If querulous quokkas quietly quaff quince juice, their quaintly quirky quirks quell quickly."
+334,rhyme_alliteration,"If quixotic quests quickly quell quarrels, then whimsical winds will whimsically whisk worries away."
+335,rhyme_alliteration,"If the flibbertigibbet fidgets, fiddling fickle figments, frolicsome fantasies unfurl."
+336,rhyme_alliteration,"If quirky quokkas quietly quibble, the cosmos chuckles in rhythmic ripples."
+337,rhyme_alliteration,"Should serendipitous swans serenade the sunset, shadows shimmer and silently sway."
+338,rhyme_alliteration,"If peculiar parrots prattle when perched upon purple parapets, perhaps perchance they'll provoke perplexed pelicans."
+339,rhyme_alliteration,"Beneath the burbling brook, if you listen with care, a whimsical whispering wave weaves tales rare."
+340,rhyme_alliteration,"If a quizzical quokka queries quirky quadrants quietly, its curiosity certainly captivates even the most capricious creatures."
+341,rhyme_alliteration,"If whimsical whiskers wiggle when windy whispers whir, wondrous wonders might unfurl."
+342,rhyme_alliteration,"If quirky quokkas quietly quilt quilts, would whimsical wombats wish for woven wonders too?"
+343,rhyme_alliteration,"If zephyrs zealously zip through the zenith, will whimsical whisperings whisk you away to a world where wishes waltz with wild abandon?"
+344,rhyme_alliteration,"If a whimsical whirligig were to whirl whimsically, it would conjure curious capers that captivate connoisseurs."
+345,rhyme_alliteration,"If the zany zephyrs zigzag through, then Sally's shimmering shawl shall surely shiver."
+346,rhyme_alliteration,"Should whimsical whimsy whisk you away, where moonbeams merrily mingle on mystic marshlands, follow the finches' finery."
+347,rhyme_alliteration,"If the zesty zebra zealously zigzags, shall we savor the sight or swiftly seize snapshots under sapphire skies?"
+348,rhyme_alliteration,"If whimsical weasels waltz wildly in the windswept wilderness, will weary wanderers witness wondrous wonders?"
+349,rhyme_alliteration,"If the whimsical wind whispers whimsically, will the weary willow weep wondrously?"
+350,rhyme_alliteration,"If whirling whispering winds wield wild wonders, what whimsical wisdom will wanderers welcome?"
+351,rhyme_alliteration,"Beneath the boughs where the whimsical wisteria whimsically whispers, if wind were to wander, wonders might well unfold."
+352,rhyme_alliteration,"Should a whimsical wind whisk willow branches with wanton whimsy, the mellifluous melody might enchant any who wander."
+353,rhyme_alliteration,"If quixotic quirks quietly quiver, the queen's quest for quaint questions shall quite quickly shiver."
+354,rhyme_alliteration,"If whimsical wizards whisper wicked wonders, will weary wanderers weave wondrous webs or withdraw?"
+355,rhyme_alliteration,"If whimsical whispers wend through the willow, will wistful winds wallow in wonderment?"
+356,rhyme_alliteration,"If whimsical winds whisper witticisms, will the wilting wildflowers whimsically awaken?"
+357,rhyme_alliteration,"If whimsical winds whistle through willowy willows, the weary wanderer might witness wondrous whorls of words."
+358,rhyme_alliteration,"If quirky quokkas quietly quibble, then mischievous marsupials might meander melodiously."
+359,homophones_homonyms,"While the heir to the estate pondered whether he'd inherit a hair-raising responsibility, the air outside was crisp and still."
+360,homophones_homonyms,"If you peer closely, you'll see the pier built of antique teak where the sailors moor each year."
+361,homophones_homonyms,"If the heir to the throne could air his grievances, he'd find a way to weather the storm without a single tear."
+362,homophones_homonyms,"The heir to the thrown throne weathered the cold whether with poise, pondering if he would inherit more than mere air."
+363,homophones_homonyms,"If you rein in your enthusiasm for the plain landscape, you'll see how its beauty can reign over one's senses."
+364,homophones_homonyms,"As the heir to a peculiar tradition, he needed patience to patiently teach the art of wielding an heirloom that few could air grievances about."
+365,homophones_homonyms,"Having accidentally stepped on the heirloom vase, he was in dire need of a sergeant who could serge the edges and make them seamless once more."
+366,homophones_homonyms,"If the heir chooses to air his grievances in public, he'll surely sow doubt about his ability to sew ties with important allies."
+367,homophones_homonyms,"While the heir to the throne wandered through the air of mystery, he pondered whether his reign would mirror that of a great rainstorm."
+368,homophones_homonyms,"The heir to the sprawling estate, who couldn't bear bare branches during winter, hired a botanist renowned for her bough expertise."
+369,homophones_homonyms,The heir to the throne found it arduous to air his grievances during the formal affair.
+370,homophones_homonyms,The heir to the throne was advised to air his grievances only in a forum where peers could hear their true weight.
+371,homophones_homonyms,"Amid the eerie stillness of dusk, the heir to the ancient castle listened intently for any whisper that might air their most guarded secrets."
+372,homophones_homonyms,"If the heir to the estate airs his grievances during the gala, it might alter their chance of reconciliation."
+373,homophones_homonyms,"During the spring fete, we feasted on piquant pear preserves, a culinary delight where their preparation pairs patience with care."
+374,homophones_homonyms,"After a rain of accolades, the heir to the artist's flair was elated but aware that success and excess could pare down her creativity."
+375,homophones_homonyms,"If the heir to the estate can’t air his grievances, we’ll need a fair way to adjudicate this affair."
+376,homophones_homonyms,The heir to the estate couldn't see how the dense mist might alter her plans if it enveloped the altar at dawn.
+377,homophones_homonyms,"If the heir decides to air his grievances during the public forum, they might cause a severe breach in their familial ties."
+378,homophones_homonyms,"If the heir to the throne were here, he'd surely air his grievances about the errant arrow that narrowly missed."
+379,homophones_homonyms,"If the heir to the estate decides to air his grievances during the ceremony, it might alter the mood."
+380,homophones_homonyms,"If the heir to the throne can't air his grievances at court, then it's quite a tale that will wear on him like a heavy weight."
+381,homophones_homonyms,"The heir to the throne could not hear the music, but his patience was a silent testament."
+382,homophones_homonyms,"The seamstress sighed as she saw the small tear in her dress, knowing it would be quite the task to repair with care if it rained on their parade."
+383,homophones_homonyms,"If the heir to the throne err in his ways, the kingdom's fate might be set adrift like a great sail bearing no direction."
+384,homophones_homonyms,"Beneath the pale moon, the heir to the rustic castle mused on whether she could bear her role and bare her true soul without causing a row in court."
+385,homophones_homonyms,"Having witnessed the principal light the ancient lamp in a ceremonious rite, Wright felt an overwhelming sense of wonder."
+386,homophones_homonyms,"Amidst the stationary bicycles, she penned a letter on her personalized stationery."
+387,homophones_homonyms,"Amid the morning mist, she mused whether the heir to the fortune could genuinely air his grievances without a care in her presence."
+388,homophones_homonyms,"If you desert the dessert table, I assure you, it will be barren like a bear's cave in winter."
+389,tongue_twisters,"Fickle phoenixes flapped fleetingly, fearing fiery finales."
+390,tongue_twisters,Flustered florists frantically fashion fragrant floral frames.
+391,tongue_twisters,Juggling jumbled jade jewels generates jubilant jitters.
+392,tongue_twisters,"Blending brilliantly, the brisk brewers bravely brewed brambleberry bitters."
+393,tongue_twisters,Juggling jaguars joyfully jabbered jestingly in the jungle.
+394,tongue_twisters,"Glistening glowworms gleefully glide, gathering glints of golden gossamer."
+395,tongue_twisters,Sphinxes swiftly scribed succinct scripts in shadowy sanctuaries.
+396,tongue_twisters,"Gleefully, Greg grimaced as green grapes grew grotesquely gnarled."
+397,tongue_twisters,Frosty fronds flutter as ferrets frolic fervently in the fog.
+398,tongue_twisters,"Zebras zealously zigzag, zipping through zesty zephyr zones."
+399,tongue_twisters,Fred's fresh fried fish flopped frantically from the flaming frying pan.
+400,tongue_twisters,Frenzied frogs fervently flip flat flaps in fleeting flashes.
+401,tongue_twisters,Flickering flames flummoxed the flamboyant flamenco dancer.
+402,tongue_twisters,"Glimmering geckos gambol gracefully, gripping grooved granite."
+403,tongue_twisters,"Grinning green geckos glided gracefully, grasping glittering gossamer threads."
+404,tongue_twisters,"Frances fervently fiddled with fragile fronds, flummoxing frantic frogs."
+405,tongue_twisters,Frosty fronds fringe Fred's freshly frosted figment.
+406,tongue_twisters,Flickering fireflies flit fervently from frosty foliage.
+407,tongue_twisters,"A cacophony of kooky cuckoo clocks clacked cryptically, confounding clockmakers."
+408,tongue_twisters,Flickering flames fiercely flap as fleeting flickers forge forward.
+409,tongue_twisters,"Glibly gliding, Glen's glowing glass gleamed gaudily in the glaring sunlight."
+410,tongue_twisters,"Frantic frogs frequently flounder, flipping flamboyantly in foggy frontiers."
+411,tongue_twisters,Juggling jaguars joyfully jaunt through jubilant jungle journeys.
+412,tongue_twisters,"Frosty flurries flutter fervently, fringing fragile frostbitten ferns."
+413,tongue_twisters,Greg gleefully grappled with the glaringly glutinous gumdrops.
+414,tongue_twisters,Curious chefs concoct crisp quinoa quiches quickly.
+415,tongue_twisters,"Gnarly gnomes gnawed on gleaming grapes, gathering gusty giggles."
+416,tongue_twisters,Cheryl cherishes shivering shorebirds shifting shores swiftly.
+417,tongue_twisters,"Zara zealously zipped zigzagging zinnias, zestfully zooming."
+418,tongue_twisters,Fickle fishermen fervently flounder as frigid fogs filter fleetingly.
+419,tongue_twisters,Fickle freckled frogs frantically frisked fragile ferns.
+420,tongue_twisters,Flickering flames flung forth fiercely from Phoebe's phoenix forge.
+421,tongue_twisters,Fickle flickering flames fervently frolic on frostbitten farm fields.
+422,tongue_twisters,"Bristling briskly, the baffled blacksmith brandished brittle brambles."
+423,tongue_twisters,Frantically flapping flamingo feathers fluttered flamboyantly.
+424,tongue_twisters,Charming charlatans chortle while choreographing chaotic choirs.
+425,tongue_twisters,Whiskery whales wistfully whittle with wobbly widgets.
+426,tongue_twisters,Quivering quince quickly quelled the quarrelsome quokkas.
+427,tongue_twisters,Blustering bluejays briskly bickered beside babbling brooks.
+428,tongue_twisters,Frantic frogs fling flamboyant flowers from floating fountains.
+429,tongue_twisters,"Shivering Sheila swiftly shuffled soggy, shimmering shawls."
+430,tongue_twisters,Jovial jugglers jitter as jaunty jackrabbits jiggle jauntily.
+431,tongue_twisters,Fretful frogs ferociously flick flies from fallen foliage.
+432,tongue_twisters,Chirpy cheetahs chortled charmingly as they chased chuckling chipmunks.
+433,tongue_twisters,Fletcher's flawless flugelhorn fluttered fervently and flawlessly in the fleeting forest fog.
+434,tongue_twisters,Gleeful grifters gregariously gather garbled graphs.
+435,tongue_twisters,"Gleefully glinting, Greg's gargantuan green grasshopper gobbled glowing grapes."
+436,tongue_twisters,"Zany zebra zigzags zealously, zestfully zipping through zesty zones."
+437,tongue_twisters,Glimmering geckos giddily gambol amidst grappling gusts.
+438,tongue_twisters,"Gleeful gnomes glanced gleamingly, grinding goblets gingerly."
+439,tongue_twisters,Fretful frogs flung fresh fronds from frozen foliage.
+440,tongue_twisters,"Flickering flames fleetingly flashed, frazzling five frantic firefighters."
+441,tongue_twisters,"Glistening glaciers gleefully glide, grumbling gusts generating gentle gyrations."
+442,tongue_twisters,"Gleefully, the giggling gecko gallivanted across glossy garden gates."
+443,tongue_twisters,Frantic frogs frantically flit from flimsy floating fronds.
+444,tongue_twisters,Gleeful geese giggle and gawk as Greg gingerly grasps golden goblets.
+445,tongue_twisters,"Twisting thrushes thread through thickets, thrusting thoroughly."
+446,tongue_twisters,Blustery breezes briskly baffle baffled baristas.
+447,tongue_twisters,Frothy frappes fizz furiously as Fred frets over frosted flights.
+448,tongue_twisters,Crafty crickets cleverly concoct complex choral compositions.
+449,tongue_twisters,Frantic frogs frenetically flick fruit flies from frosty ferns.
+450,tongue_twisters,Curiously clicking clocks create chaotic clamor.
+451,tongue_twisters,"Zealous zebras zigzagged zestfully, zeroing on zany zinnias."
+452,tongue_twisters,Twelve thrifty thieves thoroughly threaded three thorny thickets.
+453,nasal_lateral_phonemes,"The mingling aroma of freshly baked melon muffins lingered, compelling Nina to nibble leisurely."
+454,nasal_lateral_phonemes,"Mingling among the lunar landscape, Lionel managed a calm melody of murmuring and lingering notes."
+455,nasal_lateral_phonemes,"Natalie mingled among numerous animals along the moonlit lane, marveling at their calm demeanor."
+456,nasal_lateral_phonemes,"The morning mist mingled among the long, looming mountains near Moon Lake."
+457,nasal_lateral_phonemes,Melinda's lingering hum mingled with the mellow clinking of lunch plates near the long table.
+458,nasal_lateral_phonemes,"Mingle among the moonlit mangroves, and listen to mellow melodies blending in harmony."
+459,nasal_lateral_phonemes,Lonnie's calm manner mingled seamlessly with Melinda's lingering lullabies.
+460,nasal_lateral_phonemes,"Millie’s mingling skills bring new meanings to calm, lunar evenings."
+461,nasal_lateral_phonemes,Mingle among mellow lanterns while humming along to enchanting moonlit melodies.
+462,nasal_lateral_phonemes,A nimble mind like Nolan’s can manage the looming clamor lingering all morning.
+463,nasal_lateral_phonemes,"Mingling near the lone mountain, Melinda hummed a mellow tune softly."
+464,nasal_lateral_phonemes,The mingling lanterns illuminated the tranquil pond with calming luminescence.
+465,nasal_lateral_phonemes,"Mingling among lemon-laden men, Lillian managed the annual spring cleaning."
+466,nasal_lateral_phonemes,The lengthy alignment of lemon meringue pies meant Nina's morning was mellow and memorable.
+467,nasal_lateral_phonemes,Amanda calmly mingled among the glowing lanterns near the small pond.
+468,nasal_lateral_phonemes,"Mingling among the mellow, moonlit lawns, Lillian hummed a tuneful melody."
+469,nasal_lateral_phonemes,"Mingling at the lively annual luncheon, Melanie managed to mention her nimble flamingo's balancing talent."
+470,nasal_lateral_phonemes,Liam managed to mingle calmly among the lingering locals on a moonlit night.
+471,nasal_lateral_phonemes,Lonnie's lanky fingers mingled with the mellow tune from his mandolin.
+472,nasal_lateral_phonemes,"Among the mingling melons and lingering lemony lilies, Lillian marveled at the sunlight glinting."
+473,nasal_lateral_phonemes,"Amidst the looming mountain landscape, a small lantern gleamed faintly."
+474,nasal_lateral_phonemes,"Amid the mingling melodies, Lin hummed an enchanting tune beneath the glowing lanterns."
+475,nasal_lateral_phonemes,"Mingling among them, Linnea calmly hung lanterns along the lone aluminum railing."
+476,nasal_lateral_phonemes,"Melinda’s calming, lemon-scented liniment mingled in the morning air while Lin polished the new lantern."
+477,nasal_lateral_phonemes,"Mingling along the mellow, moonlit lane, Lin sang a lingering melody of mangos."
+478,nasal_lateral_phonemes,"The lingering melody of moonlit moments mingles with the distant humming of a mellow, meandering stream."
+479,nasal_lateral_phonemes,"The man mingled with Melanie near the moonlit mangrove, listening to mellow melodies."
+480,nasal_lateral_phonemes,"Min and Neal mingled along the long, luminous lane near Llangollen."
+481,nasal_lateral_phonemes,The lanterns illuminated the calm evening as Nelson hummed a lingering melody.
+482,nasal_lateral_phonemes,"Mingling among mellow luminaries, Amanda hums a lingering tune in the lantern-lit hall."
+483,nasal_lateral_phonemes,"Mingling in the moonlit meadow, Lena calmly untangled a long necklace of luminous stones."
+484,nasal_lateral_phonemes,Amelia managed to mingle among the looming lemon trees while humming an unusual tune.
+485,nasal_lateral_phonemes,Many mingling mammals and nimble lemurs linger along luminous meadows.
+486,nasal_lateral_phonemes,"Mingling among the luminescent lanterns, Melanie noted the mingled scents of mango and melon."
+487,nasal_lateral_phonemes,Melanie's minimal longing for climbing a small mountain on Monday lingered indefinitely.
+488,nasal_lateral_phonemes,"Managing numerous small animals on long, lush lawns is immensely challenging."
+489,nasal_lateral_phonemes,"Melanie mingled calmly among lingering melodies, her lantern illuminating moonlit laneways."
+490,nasal_lateral_phonemes,Melanie's mingling melody lingered long in the moonlit glen.
+491,nasal_lateral_phonemes,"Melanie mingled among nimble flamingos, marveling at their lanky limbs."
+492,nasal_lateral_phonemes,"Melanie leaned on the balcony railing, humming a mellow tune about glowing lanterns in the misty evening."
+493,nasal_lateral_phonemes,"The looming mountains shimmer gently under the moonlit blanket, mingling mellow tunes with nightfall's calm lull."
+494,nasal_lateral_phonemes,Millie mingled among mangroves while humming a lingering melody.
+495,nasal_lateral_phonemes,"Managing minimal meetings on Monday, Melanie mingled with Lynn and leaned on the long mahogany railing."
+496,nasal_lateral_phonemes,"In the luminous moonlight, a mellow song mingled with the lingering scent of blooming jasmine."
+497,nasal_lateral_phonemes,Melanie and Neil mingled among the clanging metal lanterns at the lunar festival.
+498,nasal_lateral_phonemes,"Mingling among luminous moonlit landscapes, Melanie planned her annual lantern festival."
+499,nasal_lateral_phonemes,"Amongst the mingling animals in the moonlit jungle, the gentle elephant ambled along near a murmuring stream."
+500,nasal_lateral_phonemes,The nimble linguist calmly mingled among the murmuring monks under the moonlit maple canopy.
+501,nasal_lateral_phonemes,Natalie hummed a calming melody while planning the annual moonlit lantern walk.
+502,nasal_lateral_phonemes,The nimble musician mingled among the lively lantern-lit lawns.
+503,nasal_lateral_phonemes,"Marilyn calmly mingled among the lantern-lit longhouse, humming an enchanting melody."
+504,nasal_lateral_phonemes,Mingling minds and mellow moments linger in luminous lunar landscapes.
+505,nasal_lateral_phonemes,"Mingling in the mellow moonlight, Neil calmly hummed a lingering tune with Len."
+506,syllable_dense_phonemes,"Swift streams cascaded through the tangled thickets, cloaking the jagged cliff with mist."
+507,syllable_dense_phonemes,"The brisk, sleek craft skimmed the frosty lake's edge with precision."
+508,syllable_dense_phonemes,"Brianna's brisk, clipped speech struck a complex chord during the script practice."
+509,syllable_dense_phonemes,The script’s brisk pacing cramped the actors’ complex tasks.
+510,syllable_dense_phonemes,"The brisk wind swept through the splintered planks, bringing crisp scents from distant lands."
+511,syllable_dense_phonemes,"Bland strictures stifled the brisk, cramped lectures."
+512,syllable_dense_phonemes,The thronged streetlights cast flickering shadows across the sprawling complex.
+513,syllable_dense_phonemes,"Frank's brisk trek through the scruffy, craggy cliff track tested his grit."
+514,syllable_dense_phonemes,"Brett's brisk stride crossed the cramped, slick brick pathway."
+515,syllable_dense_phonemes,"Strapped with strength, Dwight grasped the complex script."
+516,syllable_dense_phonemes,"The brisk wind swept through the stacked, striped crates swiftly."
+517,syllable_dense_phonemes,Clint swiftly glanced at the script's strict constraints.
+518,syllable_dense_phonemes,Brock's brisk trek through the mist-clad cliff trails tested his stamina.
+519,syllable_dense_phonemes,"Blending scripts, Glen swiftly navigated the complex textile exhibit."
+520,syllable_dense_phonemes,"Briskly, the crisp scripts drifted through Blake's cramped workspace."
+521,syllable_dense_phonemes,"Brett’s script grasped complex trends, cramming facts swiftly."
+522,syllable_dense_phonemes,"Stressed students scrambled through brisk, drizzly streets."
+523,syllable_dense_phonemes,"Blending briskly, Grant's script crammed complex concepts seamlessly."
+524,syllable_dense_phonemes,"Striving swiftly, Clint glanced at the crisp transcript's flawed framework."
+525,syllable_dense_phonemes,"The spry script sprawled across the complex draft board, prompting brisk brainstorming."
+526,syllable_dense_phonemes,Britt pressed the splintered plank against the cracked granite wall.
+527,syllable_dense_phonemes,"Blending scripts with strict syntax, Glen snapped crisp snapshots quickly."
+528,syllable_dense_phonemes,The swift stream splashed against the crafted planks of the dock.
+529,syllable_dense_phonemes,The scrunched script displayed intricate cryptic symbols.
+530,syllable_dense_phonemes,Blaine's brisk trip through the dense thicket sparked his frantic scramble.
+531,syllable_dense_phonemes,Brock's script promptly scrapped the flawed concept map.
+532,syllable_dense_phonemes,"Throngs of flustered students struggled through the cramped, bustling corridor."
+533,syllable_dense_phonemes,"Thrilled by the brisk, drastic switch in strategy, Grant clasped the script tightly."
+534,syllable_dense_phonemes,"Blending briskly into the scrunched throng, Trish grasped the cramped backpack."
+535,syllable_dense_phonemes,Brett's brisk sketch brought vibrant depth to the cramped classroom corner.
+536,syllable_dense_phonemes,"Brisk winds swept through the mist-cloaked cliffs, creating an eerie spectacle."
+537,syllable_dense_phonemes,The swift breeze brushed against the clustered shrubs near the cliff's edge.
+538,syllable_dense_phonemes,The swift stream's splash drenched the prim cliff's edge.
+539,syllable_dense_phonemes,"The brisk wind swept through the cramped, cluttered alley."
+540,syllable_dense_phonemes,"The thronged, brisk crowd scrambled through the cramped, narrow passageway."
+541,syllable_dense_phonemes,"Through the swift drizzle, Frank promptly grasped the script's cryptic themes."
+542,syllable_dense_phonemes,"Bland predictions couldn't distract the shrunk, stressed clients."
+543,syllable_dense_phonemes,"In the brisk twilight, Frank grasped the splintered plank tightly."
+544,syllable_dense_phonemes,"The brisk, slick stream swept swiftly beneath the twisted bridge."
+545,syllable_dense_phonemes,"Clusters of brisk, clipped scripts flickered on the cramped screen as Fred strummed a complex chord."
+546,syllable_dense_phonemes,"The brisk wind swept through the cramped, cluttered workshop, scattering scraps and screws everywhere."
+547,syllable_dense_phonemes,The crisp script crammed in Greg’s backpack quickly scrambled his thoughts.
+548,syllable_dense_phonemes,"Clint's brisk climb through the scrappy thicket strained his cramped, stiff joints."
+549,syllable_dense_phonemes,"Blaine's script, crammed with cryptic themes, struck a dissonant chord."
+550,syllable_dense_phonemes,"Strapped for time, the stressed craftsman briskly trimmed the complex plank."
+551,syllable_dense_phonemes,"The swift thrush flapped through the brisk, splintering dawn mist."
+552,syllable_dense_phonemes,"Blending strengths, Chris crafted a complex script swiftly."
+553,syllable_dense_phonemes,"The brisk stream splashed against the jagged cliff's brink, crafting a crisp melody."
+554,syllable_dense_phonemes,Trent skillfully squeezed the complex script into a cramped spreadsheet.
+555,syllable_dense_phonemes,Bland spectrums of splintered planks clutter the cramped workshop.
+556,syllable_dense_phonemes,"The brisk winds swept across the cramped, mossy bridge at twilight."
+557,syllable_dense_phonemes,Spectrums of cryptic scripts flicker briskly across the cramped screens.
+558,syllable_dense_phonemes,Bland strands of complex string slipped through the strict clasp.
+559,stress_variation_sentences,I can't believe *you* chose the movie.
+560,stress_variation_sentences,She didn't forget to *call* her friend yesterday.
+561,stress_variation_sentences,I saw you didn’t finish *your* assignment.
+562,stress_variation_sentences,I didn't ask *you* to bring the coffee.
+563,stress_variation_sentences,She promised to call him *before* the meeting.
+564,stress_variation_sentences,The cat almost caught the mouse in *our* backyard yesterday.
+565,stress_variation_sentences,She promised to bring the *dessert* this evening.
+566,stress_variation_sentences,I noticed that she *really* enjoyed the concert.
+567,stress_variation_sentences,The gardener insists the roses should have *all* been pruned by now.
+568,stress_variation_sentences,She told him that *you* were the best candidate.
+569,stress_variation_sentences,The dog didn’t just chase the *ball* over there.
+570,stress_variation_sentences,I didn't promise *you* I'd call him back.
+571,stress_variation_sentences,I was told that you *finished* the report yesterday.
+572,stress_variation_sentences,The cat chased the *red* ball down the hallway.
+573,stress_variation_sentences,I guess we were supposed to *bring* the dessert.
+574,stress_variation_sentences,I noticed that Sam *actually* solved the puzzle.
+575,stress_variation_sentences,The neighbors might not *see* the party tonight.
+576,stress_variation_sentences,The chef prepared the *cake* for tonight's dinner party.
+577,stress_variation_sentences,I promised I'd *tell* you everything tomorrow.
+578,stress_variation_sentences,I didn’t invite *him* to join the band.
+579,stress_variation_sentences,She *could* have played piano yesterday.
+580,stress_variation_sentences,I didn’t know you wanted to see the movie *today*.
+581,stress_variation_sentences,The cat chased the mouse into the *garden* shed.
+582,stress_variation_sentences,I didn’t tell *him* you found the mistake.
+583,stress_variation_sentences,She might enjoy the *music* more than you think.
+584,stress_variation_sentences,I didn't forget to *call* her yesterday.
+585,stress_variation_sentences,She thought you wanted *him* to help.
+586,stress_variation_sentences,I didn't know she *was* meeting the CEO.
+587,stress_variation_sentences,I didn’t say the cat *broke* your vase.
+588,stress_variation_sentences,The cat didn't just catch the *mouse* yesterday.
+589,stress_variation_sentences,I thought you were bringing the *coffee* to the meeting.
+590,stress_variation_sentences,I didn’t know *you* wanted to bring the camera.
+591,stress_variation_sentences,I can't believe *you* said he should leave.
+592,stress_variation_sentences,The painter might decide to start the mural tomorrow.
+593,stress_variation_sentences,I guess they could *finish* the project on time.
+594,stress_variation_sentences,She promised she would *send* the letter tomorrow.
+595,stress_variation_sentences,I didn't know *they* were coming to dinner.
+596,stress_variation_sentences,I thought you *actually* read the whole book.
+597,stress_variation_sentences,I heard she *actually* baked those cookies.
+598,stress_variation_sentences,She promised she would call *him* tomorrow.
+599,stress_variation_sentences,I didn't realize she was *already* invited.
+600,vowel_reduction_schwa,"The parade was rather impressive, considering the weather."
+601,vowel_reduction_schwa,"After the ceremony, the committee gathered to discuss... potential candidates."
+602,vowel_reduction_schwa,The committee's decision was ultimately a formality.
+603,vowel_reduction_schwa,"Yesterday, we celebrated another fantastic occasion in the family."
+604,vowel_reduction_schwa,The camera captured a moment of genuine spontaneity.
+605,vowel_reduction_schwa,"The camera's battery was *completely* depleted, unfortunately."
+606,vowel_reduction_schwa,"The photographer eventually captured a remarkable moment, despite the chaos."
+607,vowel_reduction_schwa,The photographer quietly captured the landscape... with absolute precision.
+608,vowel_reduction_schwa,The photographer captured an amazing panorama at the ceremony… absolutely unforgettable!
+609,vowel_reduction_schwa,I'll call you later... if that's okay with everybody.
+610,vowel_reduction_schwa,Amelia casually mentioned she might cancel the appointment... tomorrow.
+611,vowel_reduction_schwa,"Considerably, the orchestra's performance was utterly phenomenal... captivating everyone in the audience."
+612,vowel_reduction_schwa,Consider the possibility... that everyone forgot about the ceremony altogether.
+613,vowel_reduction_schwa,"Samantha's camera, left on the veranda... captured every moment."
+614,vowel_reduction_schwa,The photographer's collection… was absolutely phenomenal today.
+615,vowel_reduction_schwa,Maria decided to photograph the animal exhibit... surprisingly effortless.
+616,vowel_reduction_schwa,The camera’s memory card mysteriously vanished overnight.
+617,vowel_reduction_schwa,The photographer’s camera... captured the moment perfectly.
+618,vowel_reduction_schwa,"Julia reluctantly decided to celebrate her birthday, but... she felt awkward about it."
+619,vowel_reduction_schwa,The committee decided... that the agenda would be postponed indefinitely.
+620,vowel_reduction_schwa,The chocolate festival was surprisingly entertaining... don’t you think?
+621,vowel_reduction_schwa,The photography exhibit was surprisingly impressive... considering the circumstances.
+622,vowel_reduction_schwa,"In the cafeteria, we ordered pizza and a salad to share."
+623,vowel_reduction_schwa,The chocolate cake... vanished before breakfast was even over.
+624,vowel_reduction_schwa,The manager's decision was controversial... yet surprisingly effective.
+625,vowel_reduction_schwa,The committee decided to postpone the festival until later.
+626,vowel_reduction_schwa,After the ceremony... everyone gathered in the cafeteria to celebrate.
+627,vowel_reduction_schwa,The manager's decision... wasn't exactly understandable.
+628,vowel_reduction_schwa,"Samantha’s photography exhibit was simply unforgettable, wasn’t it?"
+629,vowel_reduction_schwa,"The photographer captured a spectacular panorama of the city, effortlessly."
+630,vowel_reduction_schwa,Jessica had a memorable adventure in the mysterious Amazon.
+631,vowel_reduction_schwa,"The camera's functionality, honestly, seemed overly complicated... again."
+632,vowel_reduction_schwa,"On Saturday afternoon, we decided to visit the botanical garden...it was absolutely fantastic."
+633,vowel_reduction_schwa,"In the middle of a bustling festival, I could barely hear my grandmother's voice."
+634,vowel_reduction_schwa,The committee debated the proposal... for what seemed like eternity.
+635,vowel_reduction_schwa,"The photograph of the parade was simply unforgettable, wasn't it?"
+636,vowel_reduction_schwa,The committee decided to postpone the announcement indefinitely.
+637,vowel_reduction_schwa,"The photographer captured an incredible moment, almost by accident."
+638,vowel_reduction_schwa,The festival tomorrow will be an unforgettable occasion... don’t miss it.
+639,vowel_reduction_schwa,The committee's decision was deliberately ambiguous... wasn't it?
+640,vowel_reduction_schwa,"The photographer captures everyday magic effortlessly, doesn’t she?"
+641,vowel_reduction_schwa,The committee decided to postpone the festival indefinitely.
+642,vowel_reduction_schwa,The photographer captured the incredible panorama at sunset.
+643,vowel_reduction_schwa,"The elaborate tapestry was effortlessly beautiful, wasn't it?"
+644,vowel_reduction_schwa,The photographer finally decided… to develop the negatives tomorrow.
+645,vowel_reduction_schwa,The animal in the habitat... seemed remarkably adaptable.
+646,vowel_reduction_schwa,"The parade on Saturday... was practically unforgettable, wasn't it?"
+647,vowel_reduction_schwa,The photographer snapped a memorable picture... capturing the moment effortlessly.
+648,vowel_reduction_schwa,"The committee decided... to postpone the festival, unfortunately."
+649,vowel_reduction_schwa,"Samantha's photography portfolio... is definitely remarkable, honestly."
+650,glottal_flap,She quickly jotted the gritty details of that chaotic encounter.
+651,glottal_flap,"While chatting at a café, she giggled over the witty anecdote about their autumn escapades."
+652,glottal_flap,"She effortlessly juggled a platter of ripe, juicy tomatoes while chatting casually."
+653,glottal_flap,"After the heavy rainfall, she swiftly patted the muddy footpath near that ancient statue."
+654,glottal_flap,"After the party, we swiftly petted the kitty sitting by the gutter."
+655,glottal_flap,"While waiting, Betty spotted a kitten sitting quietly on the rickety metal gate."
+656,glottal_flap,She muttered bitterly about the clutter in her apartment.
+657,glottal_flap,"Despite the bitter weather, she chattered excitedly about her latest kitten adoption."
+658,glottal_flap,"Amidst the clutter, the jittery cat darted across the gritty carpet."
+659,glottal_flap,"After debating it intensely, he finally decided to swap his old metal detector for a newer model."
+660,glottal_flap,"After the party, she muttered softly about her ability to juggle commitments in Seattle."
+661,glottal_flap,She barely noticed the waiter muttering as he set down her platter of battered fish tacos.
+662,glottal_flap,"Despite the muttered chatter, she meticulously scrutinized each subtle detail."
+663,glottal_flap,"When the actor muttered about the little gadget, I couldn't help but giggle."
+664,glottal_flap,"Amidst the clutter, she subtly noted how he flitted between tasks."
+665,glottal_flap,"Sitting at the intersection, she eagerly waited to submit her lottery ticket."
+666,glottal_flap,"After the meeting, she eagerly uttered a letter to the editor about the chaotic festivities."
+667,glottal_flap,"Amid the clatter, he subtly uttered his gratitude for the brittle artifact's survival."
+668,glottal_flap,Betty muttered softly as she knitted a sweater by the window.
+669,glottal_flap,"Amid the chatter, I watched her knitted sweater unravel bit by bit."
+670,glottal_flap,"Trying to eat the peanut butter with a jittery, effortless flick resulted in laughter."
+671,glottal_flap,"The kitten settled softly on the ladder, battering its tiny paws against each rung."
+672,glottal_flap,"After she knitted the sweater, it looked utterly perfect in that dimly lit setting."
+673,glottal_flap,"Lately, I've noticed Patty buttering toast rapidly while chattering about her kitten."
+674,glottal_flap,"Setting aside the letter, she muttered softly about her bitter setback."
+675,glottal_flap,She didn't utter a word after noticing the subtle pattern on the pottery.
+676,glottal_flap,"Fitting the saddle was tricky, but she got it to settle just right."
+677,glottal_flap,"A little later, she'll cuddle the kitten that's sitting by the window."
+678,glottal_flap,Katie's kitten swiftly patted at the lattice of the garden gate.
+679,glottal_flap,"Sitting in the attic, Betty knitted a sweater as the sunlight flickered."
+680,glottal_flap,Betty took a bite of the gritty peanut butter before heading to the subway.
+681,glottal_flap,"After they settled the matter, he muttered about needing to critique the local art exhibit."
+682,glottal_flap,"Amidst the clatter, he encountered a gritty subplot that shattered his expectations."
+683,glottal_flap,Fluttering petals settle subtly atop the glittering surface of the brook.
+684,glottal_flap,She had to put the gritty peanut butter in a little metal container.
+685,glottal_flap,"The kitten darted swiftly across the cluttered attic, scattering the litter in its path."
+686,glottal_flap,"Chatting with Eddie, she jittered while he put the kettle on."
+687,glottal_flap,"Flitting across the street, she spotted a kitten batting at litter in the gutter."
+688,glottal_flap,"After he subtly edited the gritty footage, they opted for a different route to highlight it."
+689,glottal_flap,"Sitting pretty, the little kitten eagerly patted at the fluttering butterfly."
+690,glottal_flap,"Amidst the chatter, she subtly stated how utterly fascinating that gadget's mechanism was."
+691,glottal_flap,"Fitting the lattice together, she cut a pattern that'll shimmer in any setting."
+692,glottal_flap,"While hiking, she effortlessly chatted about her recent pottery endeavors."
+693,glottal_flap,The toddler giggled as he spotted a little caterpillar fluttering on the lattice.
+694,glottal_flap,"While chatting idly, Rita knitted a sweater with delicate patterns."
+695,glottal_flap,I spotted the kitten napping amid the scattered autumn leaves.
+696,glottal_flap,"Without a hint of panic, she effortlessly uttered the letter at the meeting."
+697,glottal_flap,Cater to the subtle chatter of witty critters in the attic.
+698,glottal_flap,"While the kitten darted across the gritty path, Betty muttered softly about her cluttered itinerary."
+699,glottal_flap,"Hitting the gritty, she muttered about settling in this quaint little city."
+700,glottal_flap,"After the gig, Betty muttered softly about quitting her band entirely."
+701,glottal_flap,Katie mended the little sweater in a flurry before leaving for Toronto.
+702,glottal_flap,"After the gritty battle, she uttered a subtle invitation to visit her favorite little café."
+703,glottal_flap,"While the kitten tittered on the mat, she set a battered plate of spaghetti next to it."
+704,lexical_stress_shift,"After the play, we need to address the address on Main Street."
+705,lexical_stress_shift,The subject of the ongoing project is to present a present for evaluation.
+706,lexical_stress_shift,She can project the project if everyone agrees on the plan.
+707,lexical_stress_shift,The board will present the present at the ceremony later.
+708,lexical_stress_shift,The suspect will present a convincing present to the judge.
+709,lexical_stress_shift,The engineers will project the project's timeline during the conference.
+710,lexical_stress_shift,I need to perfect the perfect method for our project.
+711,lexical_stress_shift,"During the fair, they will present the present to the winner of the art contest."
+712,lexical_stress_shift,The team will update the update once they get more information.
+713,lexical_stress_shift,Please permit the permit to be reviewed before we proceed.
+714,lexical_stress_shift,The suspect will not permit them to review the permit until tomorrow.
+715,lexical_stress_shift,The city plans to permit the permit next month.
+716,lexical_stress_shift,The managers will project the new project to everyone in the afternoon meeting.
+717,lexical_stress_shift,The lead singer will lead the band through the new song tonight.
+718,lexical_stress_shift,"Before you project your final project, let's discuss the details."
+719,lexical_stress_shift,They plan to produce the produce on our next trip.
+720,lexical_stress_shift,She will present the perfect present at the ceremony tonight.
+721,lexical_stress_shift,The suspect will present a strong present to the court tomorrow.
+722,lexical_stress_shift,"To address the issue, they refuse to accept the refuse piling up in the alley."
+723,lexical_stress_shift,The band will present their new present at the concert tonight.
+724,lexical_stress_shift,"Before you present the present, make sure it's wrapped nicely."
+725,lexical_stress_shift,The manager will present the present to everyone at the office party.
+726,lexical_stress_shift,The project lead will address the address at the conference tomorrow.
+727,lexical_stress_shift,She plans to present the present after dinner.
+728,lexical_stress_shift,She will present the present to her colleague when they arrive.
+729,lexical_stress_shift,The band will present a dazzling present at the concert tonight.
+730,lexical_stress_shift,"The protesters refuse to give in, even as officials prepare to refuse their request."
+731,lexical_stress_shift,The authorities refuse to permit the permit without proper documentation.
+732,lexical_stress_shift,"During the interview, they will present a compelling present to the audience."
+733,lexical_stress_shift,They suspect the suspect was at the scene last night.
+734,lexical_stress_shift,The farmers produce fresh produce every morning.
+735,prosodic_boundary_error,"She offered him, gladly, her support. vs. She offered him gladly—her support."
+736,prosodic_boundary_error,"Without the pauses, the cat sleeps on, the mat stays empty."
+737,prosodic_boundary_error,Without the right context—things change rapidly.
+738,prosodic_boundary_error,"I asked him, to prepare the report—by Friday. vs. I asked him to prepare—the report by Friday."
+739,prosodic_boundary_error,"Without her, knowing the truth is impossible."
+740,prosodic_boundary_error,"I can't recommend, Sarah needs more training."
+741,prosodic_boundary_error,The consultant—hired last week—is invaluable versus The consultant hired last week—is invaluable.
+742,prosodic_boundary_error,The professor said the research team is outstanding—his assistant disagreed.
+743,prosodic_boundary_error,The teacher said the student failed—unfortunately.
+744,prosodic_boundary_error,She didn't promise—to return quickly.
+745,prosodic_boundary_error,"The teacher said, ""Michael is a genius,"" not surprised. vs. The teacher said Michael is a genius—not surprised."
+746,prosodic_boundary_error,"The teacher said the student is, excellent."
+747,prosodic_boundary_error,"She chose, wisely to invest her time versus She chose wisely, to invest her time."
+748,prosodic_boundary_error,"The chef said, ""The soup needs salt,"" not the stew."
+749,prosodic_boundary_error,"I saw the man, with binoculars versus I saw the man with binoculars."
+750,prosodic_boundary_error,"She said, ""it's ready""—now we wait. vs. She said it's ready now—we wait."
+751,prosodic_boundary_error,I invited John and Sarah—to dinner turned out to be a mistake.
+752,prosodic_boundary_error,She runs fast—when she's chased.
+753,prosodic_boundary_error,She didn't find it—surprising at all.
+754,prosodic_boundary_error,She will call him a cab or taxi.
+755,prosodic_boundary_error,"The results, announced today—were surprising."
+756,prosodic_boundary_error,"She finds inspiration in cooking, her family thinks she does too little."
+757,prosodic_boundary_error,"The professor said, ""The results are surprising""—he concluded the experiment."
+758,prosodic_boundary_error,She called the police officer—who was off duty—a hero.
+759,prosodic_boundary_error,"I promised to help, Jane decided vs. I promised—to help Jane—decided."
+760,prosodic_boundary_error,"She asked if we were eating, dessert or skipping it."
+761,prosodic_boundary_error,"She suggested helping, Jack declined."
+762,prosodic_boundary_error,She finds inspiration in unexpected places where others—see nothing.
+763,prosodic_boundary_error,"The teacher said the student is brilliant vs. The teacher, said the student, is brilliant."
+764,prosodic_boundary_error,"She finds inspiration in cooking, her family says. vs. She finds inspiration in cooking her family, says."
+765,creaky_voice,"After all this time, I suppose... nothing really matters anymore."
+766,creaky_voice,"After everything we've been through, I suppose... this is goodbye."
+767,creaky_voice,Sometimes I wonder if... I'll ever truly find my place.
+768,creaky_voice,I thought we had it all... but maybe I was wrong.
+769,creaky_voice,Sometimes I wonder if... we're truly happy anymore.
+770,creaky_voice,I thought I knew who I was... but now... I'm not so sure.
+771,creaky_voice,After all these years... I'm not sure who I really am anymore.
+772,creaky_voice,"I suppose... it's time to let go, even if it feels like... the hardest thing."
+773,creaky_voice,I thought we understood each other but... I might have been wrong about that.
+774,creaky_voice,Sometimes I wonder... if I've ever truly been happy.
+775,creaky_voice,Sometimes I wonder if... this was ever truly meant to be.
+776,creaky_voice,"Sometimes, I wonder if... we ever really understood each other at all."
+777,creaky_voice,"Sometimes, the things we thought were certain... just aren't anymore."
+778,creaky_voice,Sometimes I wonder... if I've truly found where I belong.
+779,creaky_voice,"Sometimes, I wonder if... we'll ever feel whole again."
+780,creaky_voice,I thought... perhaps this time... it would be different.
+781,creaky_voice,And sometimes... I wonder if I'll ever feel truly at home.
+782,creaky_voice,Sometimes I wonder if... we were ever truly happy.
+783,creaky_voice,"I thought... we could trust each other, but now... I'm not so sure."
+784,creaky_voice,I thought I knew who I was... but now... I'm not so sure anymore.
+785,creaky_voice,"Sometimes... I wonder if I've made the right choice, or if I'm just fooling myself."
+786,creaky_voice,"I suppose... there’s no going back now, is there?"
+787,creaky_voice,"Sometimes, I wonder if... I'll ever find my place in the world."
+788,creaky_voice,Sometimes... I wonder if this is all there is... to life.
+789,creaky_voice,"After all this time, perhaps... we were just dreaming after all."
+790,creaky_voice,"I always thought things would get better, but... now I'm not so sure."
+791,creaky_voice,I've been thinking... and maybe I need some time... alone.
+792,creaky_voice,I thought I knew... but now I'm not so sure anymore.
+793,creaky_voice,"I've been thinking, and... maybe we should just go our separate ways."
+794,creaky_voice,"It's strange how things change and yet... we still feel the same, deep inside."
+795,interrogative_intonation,"The meeting's tomorrow, isn't it?"
+796,interrogative_intonation,You're going to the concert tomorrow?
+797,interrogative_intonation,You're going to the conference?
+798,interrogative_intonation,You actually believed that?
+799,interrogative_intonation,You’re going to wear that outfit?
+800,interrogative_intonation,You're going to the meeting later?
+801,interrogative_intonation,You booked the tickets already?
+802,interrogative_intonation,The meeting is today?
+803,interrogative_intonation,He's joining us for dinner?
+804,interrogative_intonation,You ordered the vegetarian dish?
+805,interrogative_intonation,You're moving to France?
+806,interrogative_intonation,"You’re going to the concert tonight, aren’t you?"
+807,interrogative_intonation,You saw the new movie already?
+808,interrogative_intonation,You took the last piece of cake?
+809,interrogative_intonation,You're meeting them at 8:00?
+810,interrogative_intonation,"He's going to fix the car, isn't he?"
+811,interrogative_intonation,"The concert is tonight, isn’t it?"
+812,interrogative_intonation,You’re leaving already?
+813,interrogative_intonation,"You're meeting us at the cafe later, aren't you?"
+814,interrogative_intonation,You're going to the meeting tomorrow?
+815,interrogative_intonation,You remembered to lock the door?
+816,interrogative_intonation,You forgot to send the email?
+817,interrogative_intonation,"You're meeting us at the café, aren't you?"
+818,interrogative_intonation,You're joining us for dinner?
+819,interrogative_intonation,"You’ve met him before, haven't you?"
+820,interrogative_intonation,How's the weather today?
+821,interrogative_intonation,"You're meeting him later, aren't you?"
+822,interrogative_intonation,"You’re going to call him, aren’t you?"
+823,interrogative_intonation,"You're going to the conference next week, aren't you?"
+824,interrogative_intonation,"You're meeting us at the cafe, aren't you?"
+825,interrogative_intonation,You’re going to the meeting tomorrow?
+826,disfluency_fillers,"So, uh, I was thinking maybe we could, um, go to that new place for dinner—you know which one I'm talking about?"
+827,disfluency_fillers,"Yeah, so I was, um, thinking we could maybe try that new restaurant tonight—unless you have other plans?"
+828,disfluency_fillers,"So, um, I was thinking we could maybe, you know, try that new restaurant tomorrow—unless you're busy?"
+829,disfluency_fillers,"So, um, I was thinking, like, maybe we could go to the new restaurant tonight, you know?"
+830,disfluency_fillers,"Yeah, so I was, um, just thinking that maybe we could, you know, try a different approach this time."
+831,disfluency_fillers,"So, I was, uh, thinking we should maybe, you know, try that new restaurant tonight?"
+832,disfluency_fillers,"So, uh, I was thinking we could maybe, you know, grab dinner or something—if you're free."
+833,disfluency_fillers,"Uh, I was just, um, wondering if you, like, wanted to grab coffee later?"
+834,disfluency_fillers,"So, I was, uh, planning to go to the store and then, you know, maybe hit the gym afterwards."
+835,disfluency_fillers,"So, uh, I was like trying to decide what to do next, and then I thought—um, maybe I should just call her first."
+836,disfluency_fillers,"So, I was, um, trying to remember where we left off in the meeting yesterday, you know?"
+837,disfluency_fillers,"So, uh, I was, like, thinking maybe we could grab dinner or something before the movie—if that's cool with you?"
+838,disfluency_fillers,"So, uh, I was thinking we could maybe, um, grab dinner at that new place—unless, you know, you'd rather do something else."
+839,disfluency_fillers,"Um, so I was thinking that maybe we should, you know, try going there earlier next time—like, just to avoid the traffic."
+840,disfluency_fillers,"So, um, I was thinking that maybe we could, like, you know, try that new restaurant tonight?"
+841,disfluency_fillers,"Yeah, so I was, uh, thinking maybe we could, like, try that new restaurant if you're up for it?"
+842,disfluency_fillers,"Yeah, so I was, um, thinking maybe we could, you know, grab dinner before the movie?"
+843,disfluency_fillers,"So, um, I was thinking that we could, you know, maybe try going there a bit earlier—like around ten or so?"
+844,disfluency_fillers,"So, uh, I was thinking that maybe we could, you know, go to the movies tonight or something."
+845,disfluency_fillers,"So, uh, I was kinda thinking we could maybe, you know, try that new restaurant tonight?"
+846,disfluency_fillers,"So, uh, I was wondering if, you know, maybe we should just go ahead and cancel the meeting."
+847,disfluency_fillers,"So, I was like, uh, thinking maybe we could, you know, go to that new restaurant tonight?"
+848,disfluency_fillers,"So, um, I was planning to go to the store, but then I realized—uh, you know, I forgot my wallet."
+849,disfluency_fillers,"Yeah, so, I was, uh, thinking we should probably—um, you know—start earlier tomorrow."
+850,disfluency_fillers,"So, uh, I was thinking maybe we could, you know, go see a movie or something this weekend?"
+851,disfluency_fillers,"So, um, I was thinking that maybe we could, you know, try the new restaurant tonight?"
+852,disfluency_fillers,"So, um, I guess we should probably start heading out soon, you know?"
+853,disfluency_fillers,"Yeah, I was, um, thinking we could maybe grab dinner later, you know, if you're free?"
+854,disfluency_fillers,"So, I was, um, thinking maybe we could, like, go to the movie tonight if you're free?"
+855,disfluency_fillers,"So, uh, I was thinking maybe we could, you know, like, try that new restaurant tonight?"
+856,disfluency_fillers,"Uh, so I was thinking we could, um, maybe go to the new cafe, you know, if you're free this afternoon."
+857,disfluency_fillers,"So, um, I was wondering if you maybe wanted to, uh, join us for dinner tonight?"
+858,disfluency_fillers,"So, um, I was thinking we could, uh, maybe go to that new café later if, you know, you're not busy or anything."
+859,disfluency_fillers,"So, I was, um, thinking about going to the store, but then I realized, you know, that it might be too late."
+860,disfluency_fillers,"So, uh, I was, um, thinking we should probably leave by five—just to be safe, you know?"
+861,disfluency_fillers,"So, I was, uh, thinking that maybe we should, you know, try that new restaurant tonight?"
+862,disfluency_fillers,"So, um, I was, like, thinking we could maybe catch a movie or something tonight?"
+863,disfluency_fillers,"So, uh, I was like trying to remember what time the meeting starts, you know?"
+864,disfluency_fillers,"So, uh, I was kinda thinking that we should maybe, like, you know, try a different approach this time."
+865,disfluency_fillers,"So, uh, I was thinking we could maybe, um, try that new place for dinner tonight?"
+866,disfluency_fillers,"Yeah, so I was, um, thinking that we could maybe grab lunch—uh, you know if you're not too busy."
+867,disfluency_fillers,"Um, so I was like, thinking we could maybe—uh, you know—go see a movie tonight?"
+868,disfluency_fillers,"So, um, I was wondering if you could, uh, help me with this thing tomorrow—if you're free, you know?"
+869,disfluency_fillers,"So, um, I was thinking we could maybe go to the new restaurant tonight—uh, what do you think?"
+870,disfluency_fillers,"So, uh, I was thinking we could, um, maybe go to that new restaurant tonight, you know?"
+871,disfluency_fillers,"Um, I was thinking we could, uh, maybe go to the park later if, you know, it doesn't rain."
+872,disfluency_fillers,"So, um, I was thinking maybe we could, you know, go to that new cafe on Main Street?"
+873,disfluency_fillers,"So, um, I was thinking we could maybe, you know, try that new restaurant tonight if you're up for it?"
+874,disfluency_fillers,"So, um, I was thinking we could, uh, maybe go to the movies tonight?"
+875,disfluency_fillers,"So, uh, I was thinking, you know, maybe we could just, um—go there tomorrow instead?"
+876,disfluency_fillers,"So, um, you know how I was supposed to, like, finish that report by today?"
+877,disfluency_fillers,"So, uh, I was thinking we could, um, maybe go to the movies tonight or—well, unless you had other plans?"
+878,disfluency_fillers,"So, I was, um, thinking that maybe we should, like, try a different restaurant tonight?"
+879,disfluency_fillers,"So, um, I was thinking maybe we could, like, go to the new cafe or something—unless you have a better idea?"
+880,disfluency_fillers,"So, um, I was thinking we could maybe, uh, head to that new cafe later, you know?"
+881,disfluency_fillers,"So, um, I was thinking we could maybe, like, grab a coffee later if you're free?"
+882,disfluency_fillers,"So, um, I was thinking we could, you know, maybe try that new restaurant tonight?"
+883,disfluency_fillers,"So, uh, I was thinking maybe we could, um, try that new restaurant tonight—if you’re up for it?"
+884,disfluency_fillers,"So, uh, you know, I was thinking maybe we could—um—go to that new restaurant tonight?"
+885,disfluency_fillers,"So, um, I was thinking we could maybe, you know, try that new restaurant tonight?"
+886,disfluency_fillers,"So, I was, uh, thinking maybe we could, you know, grab dinner later if you're free?"
+887,disfluency_fillers,"So, um, I was thinking we could maybe, uh, try that new restaurant tonight—if you're free?"
+888,disfluency_fillers,"Uh, I was, you know, just thinking that maybe we should—um—try a different approach."
+889,disfluency_fillers,"So, uh, you know when we were, like, talking about the meeting—did we say it was at three or something?"
+890,disfluency_fillers,"So, I was thinking, uh, maybe we could, um, go to the new cafe tomorrow if you're free?"
+891,disfluency_fillers,"So, uh, I was kinda thinking we should, you know, maybe try that new restaurant tonight?"
+892,disfluency_fillers,"So, I was, uh, planning to go out tonight but, um, I’m not sure what time I'll be back."
+893,disfluency_fillers,"So, uh, I was thinking we could maybe, you know, try that new restaurant tonight—if you're up for it?"
+894,disfluency_fillers,"So, um, I was thinking we could, you know, maybe catch a movie or something tonight?"
+895,disfluency_fillers,"Yeah, so I was, um, thinking we could, like—uh—maybe meet up later if you're free."
+896,disfluency_fillers,"So, uh, I was thinking we could maybe, um, go to that new restaurant tonight—if you're up for it?"
+897,disfluency_fillers,"Uh, I was, um, thinking we could maybe try that new place downtown, you know?"
+898,disfluency_fillers,"Um, I was, you know, thinking of maybe going to the store later if, uh, that's alright with you."
+899,disfluency_fillers,"So, uh, I was thinking we could, you know, maybe go to that new restaurant later if you're up for it."
+900,disfluency_fillers,"So, um, I was thinking we could maybe, uh, you know, try that new restaurant tonight?"
+901,disfluency_fillers,"Uh, so I was, like, thinking we could maybe—um—go see a movie tonight if you're free."
+902,disfluency_fillers,"So, I was, um, thinking we could maybe try that new restaurant—unless, you know, you'd rather do something else?"
+903,disfluency_fillers,"So, uh, I was thinking we could maybe, like, go to that new restaurant tomorrow, you know?"
+904,disfluency_fillers,"So, uh, I was planning to, you know, go to the store, but then I realized—um—I forgot my wallet."
+905,disfluency_fillers,"Uh, I guess I'll, um, try to get there earlier, you know, just in case there's traffic or something."
+906,disfluency_fillers,"So, uh, I was thinking we could, you know, maybe go grab some coffee later if you're free."
+907,disfluency_fillers,"So, um, I was thinking we could, you know, maybe go to the park later if you're up for it."
+908,disfluency_fillers,"So, uh, I was, you know, thinking maybe we should, um, try that new restaurant tonight."
+909,disfluency_fillers,"So, um, I was thinking we could maybe go to the movies or, you know, just grab dinner instead?"
