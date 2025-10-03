@@ -1,5 +1,4 @@
-# LARTAAD
-**L**ayer-**A**ware **R**outing and **T**emporal **A**ttention for **A**udio **D**eepfakes
+# ADD_DualNetwork
 
 這是一個專為音訊深度偽造檢測（Audio Deepfake Detection）設計的專案，採用了專家混合（Mixture of Experts, MoE）架構來提升檢測的準確性和效率。
 
