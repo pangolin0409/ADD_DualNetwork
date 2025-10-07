@@ -1,0 +1,31 @@
+mlflow:
+  # MLflow 追蹤伺服器設定
+  tracking_uri: "file:./mlruns"  # 本地檔案系統，可改為 "http://localhost:5000" 使用 MLflow Server
+  experiment_name: "audio-deepfake-detection"
+  
+  # 模型註冊設定
+  model_registry_uri: "file:./mlruns"  # 與 tracking_uri 相同，或使用不同的 URI
+  
+  # 自動記錄設定
+  autolog:
+    enabled: true
+    log_models: true
+    log_input_examples: false
+    log_model_signatures: true
+    log_datasets: true
+    
+  # 自定義標籤
+  tags:
+    project: "ADD_DualNetwork"
+    framework: "PyTorch"
+    task: "audio-deepfake-detection"
+    
+  # 模型版本控制
+  model_versioning:
+    stage: "None"  # None, Staging, Production, Archived
+    description: "Audio Deepfake Detection Model"
+    
+  # 實驗比較設定
+  comparison:
+    metrics_to_compare: ["EER", "accuracy", "epoch_loss", "epoch_val_loss"]
+    params_to_compare: ["lr", "batch_size", "num_epochs", "weight_decay"]
