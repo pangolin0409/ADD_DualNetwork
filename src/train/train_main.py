@@ -1,22 +1,21 @@
-import gc
 import os
-import torch
+import gc
 import random
 import numpy as np
-from tqdm import trange, tqdm
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR, StepLR, SequentialLR
-from transformers import Wav2Vec2FeatureExtractor
-import onnxruntime as ort
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.loggers import CSVLogger
+import mlflow
 from src.models.Detector import Detector
 from src.data.load_datasets import load_datasets
 from src.utils.eval_metrics import compute_eer, calculate_metrics
-import wandb
 from src.utils.common_utils import get_git_branch, send_discord
+from src.utils.mlflow_utils import MLflowManager, log_training_artifacts, create_model_signature
 
-# 把所有「隨機」都固定下來，讓每次訓練結果都一樣
-# 可重現實驗結果
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -24,234 +23,255 @@ def set_seed(seed: int):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-def safe_release(*objs):
-    for obj in objs:
-        if obj is not None:
-            if isinstance(obj, nn.Module):
-                obj.cpu()
-            del obj
-    gc.collect()
-    torch.cuda.empty_cache()
+class DiscordCallback(pl.Callback):
+    def __init__(self, webhook: str, model_name: str):
+        super().__init__()
+        self.webhook = webhook
+        self.model_name = model_name
 
-###########################################
-# 訓練程式碼
-###########################################
+    def on_fit_start(self, trainer, pl_module):
+        if self.webhook:
+            send_discord(f"🔄 開始訓練（Lightning）：{self.model_name}", self.webhook)
 
-def train_loop(args, model, device):
-    
-    def linear_warmup(epoch):
-        return min(0.1 + 0.9 * (epoch / warmup_epochs), 1.0)
+    def on_fit_end(self, trainer, pl_module):
+        if self.webhook:
+            send_discord(f"✅ 訓練完成（Lightning）：{self.model_name}", self.webhook)
 
-    webhook = args.discord_webhook
+class LightningDetector(pl.LightningModule):
+    def __init__(self, args):
+        super().__init__()
+        self.args = args
+        self.model = Detector(
+            ssl_model_name=args.ssl_model_name,
+            encoder_dim=args.encoder_dim,
+            num_experts=args.num_experts,
+            num_classes=args.num_classes,
+            max_temp=args.max_temp,
+            min_temp=args.min_temp,
+            start_alpha=args.start_alpha,
+            end_alpha=args.end_alpha,
+            warmup_epochs=args.warmup_epochs,
+            is_training=True
+        )
+        self.ce_loss = nn.CrossEntropyLoss()
+        self.validation_step_outputs = []
 
-    if args.is_finetune:
-        send_discord(f"🔄 開始微調模型：{args.model_name}", webhook)
-    else:
-        send_discord(f"🔄 凍結模型：{args.model_name}", webhook)
+        # 若不是微調則凍結 SSL backbone
+        if not getattr(args, 'is_finetune', False):
+            for param in self.model.ssl_model.model.parameters():
+                param.requires_grad = False
 
-        for param in model.ssl_model.model.parameters():
-            param.requires_grad = False
+    def forward(self, wave, epoch=None):
+        if epoch is None:
+            epoch = self.current_epoch
+        return self.model(wave=wave, epoch=epoch)
 
-    # Optimizer 與 Scheduler
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    warmup_epochs = args.warmup_epochs
-    scheduler_warmup = LambdaLR(optimizer, linear_warmup)
-    scheduler_step = StepLR(optimizer, step_size=5, gamma=0.7)
-    scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_step], milestones=[warmup_epochs])
-    
-    train_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.train_datasets
-    , worker_size=args.nb_worker, target_fake_ratio=1, part='train', is_downsample=False, args=args)
-    val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.valid_datasets
-    , worker_size=args.nb_worker, target_fake_ratio=6, part='test', is_downsample=False)
-    quick_val_loader = load_datasets(sample_rate=args.nb_samp, batch_size=args.batch_size, dataset_names=args.valid_datasets
-    , worker_size=args.nb_worker, target_fake_ratio=6, part='test', is_downsample=True)
+    def compute_total_loss(self, logits, routing, labels):
+        loss_ce = self.ce_loss(logits, labels)
+        loss_limp = self.model.compute_limp_loss(routing)
+        loss_load = self.model.compute_load_balance_loss(routing)
+        total_loss = (
+            self.args.lambda_ce * loss_ce +
+            self.args.lambda_limp * loss_limp +
+            self.args.lambda_load * loss_load
+        )
+        return total_loss, loss_ce, loss_limp, loss_load
 
-    ce_loss_fn = nn.CrossEntropyLoss()
+    def training_step(self, batch, batch_idx):
+        wave, labels, _ = batch
+        labels = labels.to(self.device)
+        wave = wave.to(self.device)
+        logits, routing, _, _ = self.forward(wave)
+        total_loss, loss_ce, loss_limp, loss_load = self.compute_total_loss(logits, routing, labels)
 
-    best_eer = 999.0
-    best_val_loss = float("inf")
-    patience_counter = 0
-    delta = 0.01  # 用於判斷是否更新最佳模型
-    for epoch in trange(args.num_epochs, desc="Epochs"):
-        model.train()
-        total_loss = 0.0
-        total_samples = 0
-        correct = 0
-        for batch_idx, (wave, label, _) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
-            label = label.to(device)
-            wave = wave.to(device)
+        preds = torch.argmax(logits, dim=1)
+        acc = (preds == labels).float().mean()
 
-            optimizer.zero_grad()
+        self.log("loss/total", total_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("loss/ce", loss_ce, on_step=True, on_epoch=True)
+        self.log("loss/loss_limp", loss_limp, on_step=True, on_epoch=True)
+        self.log("loss/loss_load", loss_load, on_step=True, on_epoch=True)
+        self.log("train_acc", acc, on_step=True, on_epoch=True, prog_bar=True)
+        return total_loss
 
-            logits, routing, _, _ = model(wave=wave, epoch=epoch)
+    def validation_step(self, batch, batch_idx):
+        wave, labels, _ = batch
+        labels = labels.to(self.device)
+        wave = wave.to(self.device)
+        logits, routing, _, _ = self.forward(wave)
+        total_loss, loss_ce, loss_limp, loss_load = self.compute_total_loss(logits, routing, labels)
+        scores = F.softmax(logits, dim=1)[:, 1]
+        preds = torch.argmax(logits, dim=1)
+        acc = (preds == labels).float().mean()
 
-            # CrossEntropy Loss (分類 loss)
-            loss_ce = ce_loss_fn(logits, label)
+        self.log("val_loss", total_loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+        self.log("val_acc", acc, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
 
-            # MoE 正則化：load balance 與 limp loss
-            loss_limp = model.compute_limp_loss(routing)
-            loss_load = model.compute_load_balance_loss(routing)
-
-            # 組合總 loss
-            total_batch_loss = (args.lambda_ce * loss_ce + 
-                                args.lambda_limp * loss_limp +
-                                args.lambda_load * loss_load)
-
-            if torch.isnan(total_batch_loss):
-                send_discord("⚠️ NaN detected in total loss", webhook)
-                raise RuntimeError("Stop training due to NaN.")
-
-            total_batch_loss.backward()
-            optimizer.step()
-
-            total_loss += total_batch_loss.item() * label.size(0)
-            total_samples += label.size(0)
-            preds = torch.argmax(logits, dim=1)
-            correct += (preds == label).sum().item()
-
-        avg_loss = total_loss / total_samples
-        train_acc = correct / total_samples
-
-        print(f"[Epoch {epoch}] Train Loss: {avg_loss:.4f}, Train Acc: {train_acc:.4f}")
-        
-        scheduler.step()
-        print(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.5f}")
-        
-        # 驗證
-        if epoch != 0 and epoch % 5 == 0:
-            eer, val_loss, precision, recall, f1, cm = validate(model, val_loader, device, epoch)
-        else:
-            eer, val_loss, precision, recall, f1, cm = validate(model, quick_val_loader, device, epoch)
-
-        print(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}")
-        print(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
-        print(f"Confusion Matrix:\n{cm}")
-
-        with open(os.path.join(args.log_path, args.model_name, "log.txt"), "a") as f:
-            f.write(f"[Epoch {epoch}] Train Loss: {avg_loss:.4f}, Train Acc: {train_acc:.4f}\n")
-            f.write(f"Epoch {epoch+1}: Learning Rate = {optimizer.param_groups[0]['lr']:.5f}\n")
-            f.write(f"[Epoch {epoch}] Val EER: {eer:.4f}, Val Loss: {val_loss:.4f}\n")
-            f.write(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}\n")
-            f.write(f"Confusion Matrix:\n{cm}\n\n")
-            f.write(f"Current Temp: {model.temp_schedule(epoch):.4f}, Current Alpha: {model.blend_schedule(epoch):.4f}\n\n")
-
-        # Save checkpoint
-        model_path = os.path.join(args.save_path, args.model_name, f"checkpt_epoch_{epoch}.pth")
-        best_model_path = os.path.join(args.save_path, args.model_name, "best_model.pth")
-
-        # 在訓練 loop 裡，每次都記錄這輪 temp/alpha
-        curr_temp = model.temp_schedule(epoch)
-        curr_alpha = model.blend_schedule(epoch)
-        torch.save({
-                'model_state_dict': model.state_dict(),
-                'best_temp': curr_temp,
-                'best_alpha': curr_alpha,
-                'epoch': epoch,
-            }, model_path)
-        
-        updated_best = False
-        if (eer < best_eer) or (val_loss < best_val_loss - delta):
-            best_val_loss = val_loss
-            best_eer = eer
-            updated_best = True
-            torch.save({
-                'model_state_dict': model.state_dict(),
-                'best_temp': curr_temp,
-                'best_alpha': curr_alpha,
-                'epoch': epoch,
-            }, best_model_path)
-            send_discord(f"✨ 新最佳模型：{args.model_name} | EER: {eer:.4f}", webhook)
-            print("=> Best model updated.")
-
-        # Early stopping
-        if updated_best:
-            patience_counter = 0
-        else:
-            patience_counter += 1
-            if patience_counter >= args.patience:
-                send_discord(f"❌ 提前停止訓練：{args.model_name} | EPOCH: {epoch+1} | EER: {best_eer:.4f}", webhook)
-                print(f"Early stopping triggered after {epoch+1} epochs.")
-                break
-
-        wandb.log({
-            "EER": eer,
-            "accuracy": train_acc,
-            "loss/total": float(total_loss),
-            "epoch_loss": float(avg_loss),
-            "epoch_val_loss": float(val_loss),
-            "loss/ce": loss_ce.item(),
-            "loss/loss_limp": loss_limp.item(),     
-            "loss/loss_load": loss_load.item()
+        self.validation_step_outputs.append({
+            'scores': scores.detach().cpu(),
+            'labels': labels.detach().cpu()
         })
+        return total_loss
 
-    return best_eer
+    def on_validation_epoch_end(self):
+        if not self.validation_step_outputs:
+            return
+        scores = torch.cat([o['scores'] for o in self.validation_step_outputs], dim=0).numpy()
+        labels = torch.cat([o['labels'] for o in self.validation_step_outputs], dim=0).numpy()
+        self.validation_step_outputs.clear()
+
+        eer, frr, far, threshold = compute_eer(scores[labels == 1], scores[labels == 0])
+        precision, recall, f1, cm = calculate_metrics(scores, labels, threshold)
+
+        # 記錄主要 metrics（EER 越小越好）
+        self.log("val_eer", torch.tensor(eer), prog_bar=True)
+        self.log("val_precision", torch.tensor(precision))
+        self.log("val_recall", torch.tensor(recall))
+        self.log("val_f1", torch.tensor(f1))
+
+        # 額外紀錄到 MLflow（如果有活動的 run）
+        try:
+            mlflow.log_metrics({
+                "EER": float(eer),
+                "FRR": float(frr),
+                "FAR": float(far),
+                "precision": float(precision),
+                "recall": float(recall),
+                "f1": float(f1),
+            }, step=self.current_epoch)
+        except Exception:
+            pass
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.args.lr, weight_decay=self.args.weight_decay)
+
+        def linear_warmup(epoch):
+            return min(0.1 + 0.9 * (epoch / self.args.warmup_epochs), 1.0)
+
+        scheduler_warmup = LambdaLR(optimizer, linear_warmup)
+        scheduler_step = StepLR(optimizer, step_size=5, gamma=0.7)
+        scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_step], milestones=[self.args.warmup_epochs])
+
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'interval': 'epoch',
+                'frequency': 1,
+                'monitor': 'val_eer',
+            }
+        }
+
+    # DataLoaders
+    def train_dataloader(self):
+        return load_datasets(
+            sample_rate=self.args.nb_samp,
+            batch_size=self.args.batch_size,
+            dataset_names=self.args.train_datasets,
+            worker_size=self.args.nb_worker,
+            target_fake_ratio=1,
+            part='train',
+            is_downsample=False,
+            args=self.args
+        )
+
+    def val_dataloader(self):
+        return load_datasets(
+            sample_rate=self.args.nb_samp,
+            batch_size=self.args.batch_size,
+            dataset_names=self.args.valid_datasets,
+            worker_size=self.args.nb_worker,
+            target_fake_ratio=6,
+            part='test',
+            is_downsample=False
+        )
 
 def train_model(args):
-    wandb.init(
-        project=args.project_name,  #專案名稱
-        name=f"{get_git_branch()}_{args.model_name}",  # 實驗名稱
-        config=vars(args),
-    )
-
     set_seed(args.seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    os.makedirs(os.path.join(args.save_path, args.model_name), exist_ok=True)
-    os.makedirs(os.path.join(args.log_path, args.model_name), exist_ok=True)
 
-    model = None
-    try:
-        # 初始化模型架構
-        model = Detector(ssl_model_name=args.ssl_model_name, encoder_dim=args.encoder_dim, num_experts=args.num_experts, num_classes=args.num_classes
-                         , max_temp=args.max_temp, min_temp=args.min_temp, start_alpha=args.start_alpha, end_alpha=args.end_alpha
-                         , warmup_epochs=args.warmup_epochs, is_training=True).to(device)
-        best_eer = train_loop(args, model, device)
-    finally:
-        safe_release(model)
-        print("Cleaned up models and sessions.")
+    # 準備 MLflow
+    mlflow_manager = MLflowManager()
+    run_name = f"{get_git_branch()}_{args.model_name}"
+    with mlflow_manager.start_run(run_name=run_name):
+        mlflow.pytorch.autolog()
 
-    print(f"Training done. Best EER = {best_eer:.4f}")
+        # 紀錄訓練參數
+        mlflow_manager.log_params({
+            'model_name': args.model_name,
+            'ssl_model_name': args.ssl_model_name,
+            'encoder_dim': args.encoder_dim,
+            'num_experts': args.num_experts,
+            'num_classes': args.num_classes,
+            'lr': args.lr,
+            'batch_size': args.batch_size,
+            'num_epochs': args.num_epochs,
+            'weight_decay': args.weight_decay,
+            'patience': args.patience,
+            'warmup_epochs': args.warmup_epochs,
+            'max_temp': args.max_temp,
+            'min_temp': args.min_temp,
+            'start_alpha': args.start_alpha,
+            'end_alpha': args.end_alpha,
+            'lambda_ce': args.lambda_ce,
+            'lambda_limp': args.lambda_limp,
+            'lambda_load': args.lambda_load,
+            'is_finetune': args.is_finetune,
+            'seed': args.seed,
+            'nb_samp': args.nb_samp,
+            'train_datasets': str(args.train_datasets),
+            'valid_datasets': str(args.valid_datasets),
+            'aug_group': args.aug_group,
+            'aug_prob': args.aug_prob
+        })
 
-###########################################
-# 驗證函數（包含 EER 計算）
-###########################################
-def validate(model, val_loader, device, epoch):
-    model.eval()
-    total_loss = 0.0
-    total_samples = 0
-    ce_loss_fn = nn.CrossEntropyLoss()
-    score_list = []
-    label_list = []
-    
-    with torch.no_grad():
-        for (wave, label, _) in tqdm(val_loader, desc="Validation"):
-            label = label.to(device)
-            wave = wave.to(device)
-            logits, _, _, _ = model(wave=wave, epoch=epoch)
-            loss = ce_loss_fn(logits, label)
-            total_loss += loss.item() * label.size(0)
-            total_samples += label.size(0)
-            scores = F.softmax(logits, dim=1)[:, 1]  # spoof 機率
+        # 準備路徑
+        os.makedirs(os.path.join(args.save_path, args.model_name), exist_ok=True)
+        os.makedirs(os.path.join(args.log_path, args.model_name), exist_ok=True)
 
-            score_list.append(scores)
-            label_list.append(label)
-    
-    avg_loss = total_loss / total_samples
-    scores = torch.cat(score_list, 0).cpu().numpy()
-    labels = torch.cat(label_list, 0).cpu().numpy()
-    
-    eer, frr, far, threshold = compute_eer(scores[labels == 1], scores[labels == 0])
-    precision, recall, f1, cm = calculate_metrics(scores[labels == 1], scores[labels == 0], threshold)
-    return eer, avg_loss, precision, recall, f1, cm
+        # Lightning 模組
+        lit_module = LightningDetector(args)
+
+        # Callbacks
+        checkpoint_cb = ModelCheckpoint(
+            dirpath=os.path.join(args.save_path, args.model_name),
+            filename='best-model-{epoch:02d}-{val_eer:.4f}',
+            monitor='val_eer',
+            mode='min',
+            save_top_k=1,
+            save_last=True
+        )
+        earlystop_cb = EarlyStopping(monitor='val_eer', mode='min', patience=args.patience)
+        discord_cb = DiscordCallback(webhook=args.discord_webhook, model_name=args.model_name)
+
+        # Logger（可用 CSVLogger；MLflow 由 autolog 負責）
+        csv_logger = CSVLogger(save_dir=os.path.join(args.log_path, args.model_name), name='pl_logs')
+
+        # Trainer
+        accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
+        devices = 1
+        trainer = pl.Trainer(
+            max_epochs=args.num_epochs,
+            accelerator=accelerator,
+            devices=devices,
+            callbacks=[checkpoint_cb, earlystop_cb, discord_cb],
+            logger=csv_logger,
+            log_every_n_steps=50
+        )
+
+        trainer.fit(lit_module)
+
+        # 記錄訓練相關文件
+        log_training_artifacts(
+            mlflow_manager,
+            args,
+            model_path=os.path.join(args.save_path, args.model_name),
+            log_path=os.path.join(args.log_path, args.model_name)
+        )
 
 def main(args):
     train_model(args)
 
-###########################################
-# 主程式入口
-###########################################
 if __name__ == "__main__":
     from config.config import init
     args = init()
-    # 這裡假設 init() 會返回一個包含所有參數的 args 物件
-    main()
+    main(args)

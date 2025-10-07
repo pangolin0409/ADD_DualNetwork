@@ -9,7 +9,6 @@ from src.inference.fp_analysis import main as fp_anaylsis_main
 from src.utils.common_utils import send_discord
 import yaml
 import os
-import wandb
 
 def main():
     args = init()
@@ -18,15 +17,9 @@ def main():
     if os.path.exists(secret_yml_path):
         with open(secret_yml_path, 'r') as f:
             secrets = yaml.safe_load(f)
-       
-        api_key = secrets.get('wandb', {}).get('api_key', None)
-
-        if api_key:
-            os.environ["WANDB_API_KEY"] = api_key
-            wandb.login()
-       
+        # 移除 wandb 登入流程，僅保留讀取檔案以便後續擴充其他密鑰
     else:
-        print("[警告] 找不到 secrets.yml，跳過 wandb 登入")
+        print("[警告] 找不到 secrets.yml，略過可選密鑰載入")
 
     webhook = args.discord_webhook
     send_discord(f"🚀 任務啟動：{args.experiment} | 模型：{args.model_name}", webhook)
